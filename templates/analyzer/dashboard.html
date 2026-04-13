@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard | AcadFusion AI</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-8px); }
+            50% { transform: translateX(8px); }
+            75% { transform: translateX(-4px); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard-container">
+        <div class="header">
+            <a href="/" class="brand-header">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="AcadFusion AI" class="brand-logo">
+                <div class="brand-info">
+                    <span class="brand-name">AcadFusion AI</span>
+                    <span class="brand-tagline" style="font-size: 0.65rem;">Result Analyzer & Intelligent Timetable System</span>
+                </div>
+            </a>
+            <div style="display: flex; align-items: center; gap: 1.5rem;">
+                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                </button>
+                <div class="user-badge">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    Logged in as: {{ session.get('user_name', 'Faculty') }}
+                </div>
+                <a href="{{ url_for('auth.logout') }}" class="logout">Logout</a>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('range')">Sequence Mode</div>
+            <div class="tab" onclick="switchTab('bulk')">Bulk Upload File</div>
+        </div>
+
+        <div id="range-tab" class="tab-content active">
+            <form id="rangeForm">
+                <div class="input-group">
+                    <label for="start_usn">Starting USN</label>
+                    <input type="text" id="start_usn" name="start_usn" placeholder="e.g. 2BL23IS001" required pattern="[1-4][a-zA-Z]{2}\d{2}[a-zA-Z]{2}\d{3}">
+                </div>
+                <div class="input-group">
+                    <label for="count">Number of Students</label>
+                    <input type="number" id="count" name="count" min="1" max="500" value="10" required>
+                </div>
+                <button type="submit" class="btn" id="startBtnRange">Start Analysis</button>
+            </form>
+        </div>
+
+        <div id="bulk-tab" class="tab-content">
+            <form id="bulkForm">
+                <div class="input-group">
+                    <label for="file">Upload Excel / CSV / TXT (USNs in 1st Column)</label>
+                    <input type="file" id="file" name="file" accept=".csv,.txt,.xlsx,.xls" required>
+                </div>
+                <button type="submit" class="btn" id="startBtnBulk">Process File</button>
+            </form>
+        </div>
+
+        <div id="progressArea">
+            <div class="progress-header">
+                <span>Scraping Progress</span>
+                <span id="progressText">0 / 0</span>
+            </div>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div id="currentStatus">Starting engine...</div>
+            
+            <a id="downloadBtn" class="btn" href="#">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download Excel Report
+            </a>
+        </div>
+    </div>
+
+    <div id="captchaModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>VTU Security Check</h3>
+            <p style="color: var(--text-secondary); font-size: 0.875rem;">VTU requires you to solve a captcha for <strong id="captchaUsn" style="color:var(--accent-secondary)"></strong>.</p>
+            <img id="captchaImage" src="" alt="CAPTCHA">
+            <div id="captchaError" style="color: #ef4444; font-size: 0.75rem; margin-bottom: 0.5rem; display: none; font-weight: 600;"></div>
+            <div class="input-group">
+                <input type="text" id="captchaInput" placeholder="Type captcha here" required autocomplete="off">
+            </div>
+            <button id="submitCaptchaBtn" class="btn" style="margin-top: 0.5rem;" onclick="submitCaptcha()">Submit Captcha</button>
+        </div>
+    </div>
+
+    <footer class="developer-credit">
+        <div class="shine-text" style="font-size: 0.9rem;">
+            &copy; 2026 Designed & Developed by Sureshit Sharma<br>
+            Department of Information Science & Engineering (ISE)
+        </div>
+    </footer>
+
+    <script>
+        function toggleTheme() {
+            document.body.classList.toggle('light-mode');
+            localStorage.setItem('theme', document.body.classList.contains('light-mode') ? 'light' : 'dark');
+        }
+        if(localStorage.getItem('theme') === 'light') document.body.classList.add('light-mode');
+    </script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

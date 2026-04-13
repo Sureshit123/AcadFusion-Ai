@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generator | AcadFusion AI</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .wizard-step { display: none; }
+        .wizard-step.active { display: block; animation: fadeIn 0.4s ease-out; }
+        .sem-tabs { display: flex; gap: 1rem; border-bottom: 1px solid var(--glass-border); margin-bottom: 1rem; }
+        .sem-tab { padding: 0.75rem 1.5rem; cursor: pointer; color: var(--text-secondary); }
+        .sem-tab.active { color: var(--accent-primary); border-bottom: 2px solid var(--accent-primary); font-weight: 600; }
+        .sem-panel { display: none; }
+        .sem-panel.active { display: block; }
+        .master-grid-container { overflow-x: auto; margin-top: 2rem; }
+        .badge { background: var(--accent-secondary); color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem; }
+        
+        /* Credits UX Improvement */
+        .credits-container { display: flex; align-items: center; gap: 0.5rem; background: rgba(0,0,0,0.1); padding: 2px; border-radius: 6px; }
+        .credit-btn { width: 30px; height: 30px; border: none; background: var(--accent-primary); color: white; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .credit-btn:hover { background: var(--accent-secondary); }
+        .sub-credits { width: 40px !important; text-align: center; background: transparent !important; border: none !important; color: white !important; font-weight: bold; padding: 0 !important; }
+    </style>
+</head>
+<body>
+
+    <div id="progressOverlay" class="progress-overlay">
+        <div class="progress-card">
+            <div id="progressMsg" class="progress-msg">Initializing...</div>
+            <div class="main-pbar-container">
+                <div id="mainPbarFill" class="main-pbar-fill"></div>
+            </div>
+            <div id="pPercent" class="p-percent">0%</div>
+        </div>
+    </div>
+
+    <div class="timetable-container" style="max-width: 1400px; margin: 2rem auto;">
+        <div class="header">
+            <a href="/" class="brand-header">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="AcadFusion AI" class="brand-logo">
+                <div class="brand-info">
+                    <span class="brand-name">AcadFusion AI</span>
+                    <span class="brand-tagline" style="font-size: 0.65rem;">Result Analyzer & Intelligent Timetable System</span>
+                </div>
+            </a>
+            <div style="display: flex; align-items: center; gap: 1.5rem;">
+                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
+                    <svg id="themeIcon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                </button>
+                <div class="user-badge">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    Logged in as: {{ session.get('user_name', 'Faculty') }}
+                </div>
+                <a href="{{ url_for('auth.logout') }}" class="logout">Logout</a>
+            </div>
+        </div>
+
+        <!-- STEP 1: CYCLE CONFIG -->
+        <div id="step1" class="wizard-step active">
+            <div class="form-section">
+                <h2>Step 1: Resource Setup</h2>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1.5rem;">
+                    <div class="input-group">
+                        <label>Academic Cycle</label>
+                        <select id="cycle_type" onchange="updateSemesterTabs()">
+                            <option value="odd">Odd Semester (3, 5, 7)</option>
+                            <option value="even">Even Semester (4, 6)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>Physical Lab Rooms</label>
+                        <input type="number" id="max_labs" value="3" min="1">
+                    </div>
+                </div>
+                <div class="input-group" style="margin-top: 1.5rem;">
+                    <label>Department Teacher Pool (Comma separated names)</label>
+                    <textarea id="teacher_pool" rows="3" placeholder="Prof. Patil, Dr. Noola, Ms. Bharati..."></textarea>
+                </div>
+                <button class="btn" style="width: 100%; margin-top: 2rem;" onclick="goToStep(2)">Next: Configure Semesters &rarr;</button>
+            </div>
+        </div>
+
+        <!-- STEP 2: SEMESTER DETAILS -->
+        <div id="step2" class="wizard-step">
+            <div class="form-section">
+                <div class="section-header">
+                    <h2>Step 2: Semester Requirements</h2>
+                    <button class="btn" style="font-size: 0.8rem; padding: 0.5rem 1rem;" onclick="goToStep(1)">&larr; Back</button>
+                </div>
+
+                <div class="sem-tabs" id="semTabs">
+                    <!-- Tabs generated via JS -->
+                </div>
+
+                <div id="semPanels">
+                    <!-- Panels generated via JS -->
+                </div>
+
+                <button class="btn" style="width: 100%; margin-top: 2rem; height: 3.5rem; font-size: 1.1rem;" onclick="generateCycle()">🚀 Generate All Timetables</button>
+            </div>
+        </div>
+
+        <!-- STEP 3: RESULTS -->
+        <div id="step3" class="wizard-step">
+            <div class="form-section">
+                <div class="section-header">
+                    <h2>Final Department Timetables</h2>
+                    <div style="display: flex; gap: 1rem;">
+                        <button class="btn" onclick="goToStep(2)">Modify Setup</button>
+                        <button class="btn" style="background: var(--success);" onclick="exportCycle()">Export Master Excel</button>
+                    </div>
+                </div>
+
+                <div id="resultsContent">
+                    <!-- Final Grids rendered here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="developer-credit">
+        <div class="shine-text" style="font-size: 1rem;">
+            © 2026 Designed & Developed by Sureshit Sharma<br>
+            Department of Information Science & Engineering (ISE)
+        </div>
+    </footer>
+
+    <!-- Template for Semester Panel -->
+    <template id="semPanelTemplate">
+        <div class="sem-panel">
+            <div style="margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px;">
+                <input type="checkbox" class="sem-sat-holiday" style="width: auto;">
+                <label style="font-size: 0.9rem; margin: 0;">Saturday is Holiday for this Semester</label>
+            </div>
+
+            <div class="form-section" style="background: rgba(255,255,255,0.01);">
+                <div class="section-header">
+                    <h3>Subjects (Credits)</h3>
+                    <button class="btn" style="padding: 0.3rem 0.6rem; font-size: 0.7rem;" onclick="addSubjectRow(this)">+ Add Subject</button>
+                </div>
+                <div class="sub-list">
+                    <div class="dynamic-row">
+                        <input type="text" placeholder="Subject Name" class="sub-name">
+                        <div class="credits-container">
+                            <button class="credit-btn" onclick="changeCredit(this, -1)">-</button>
+                            <input type="number" value="3" class="sub-credits" readonly>
+                            <button class="credit-btn" onclick="changeCredit(this, 1)">+</button>
+                        </div>
+                        <select class="sub-teacher"></select>
+                        <button class="remove-btn" onclick="this.parentElement.remove()">×</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section" style="background: rgba(255,255,255,0.01);">
+                <div class="section-header">
+                    <h3>Labs (1 Credit, Dual Teachers)</h3>
+                    <button class="btn" style="padding: 0.3rem 0.6rem; font-size: 0.7rem;" onclick="addLabRow(this)">+ Add Lab</button>
+                </div>
+                <div class="lab-list">
+                    <div class="dynamic-row">
+                        <input type="text" placeholder="Lab Name" class="lab-name">
+                        <select class="lab-t1"></select>
+                        <select class="lab-t2"></select>
+                        <button class="remove-btn" onclick="this.parentElement.remove()">×</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section" style="background: rgba(255,255,255,0.01);">
+                <div class="section-header">
+                    <h3>Fixed Departmental Slots</h3>
+                    <button class="btn" style="padding: 0.3rem 0.6rem; font-size: 0.7rem;" onclick="addFixedRow(this)">+ Add Fixed Slot</button>
+                </div>
+                <div class="fixed-list-container">
+                    <!-- Rows will go here -->
+                    <div class="dynamic-row" style="margin-bottom: 0.5rem; display: flex; gap: 0.5rem;">
+                        <select class="fixed-day" style="flex: 1;">
+                            {% for day in days %}<option value="{{ day }}">{{ day }}</option>{% endfor %}
+                        </select>
+                        <select class="fixed-slot" style="flex: 1;">
+                            {% for slot in slots %}<option value="{{ loop.index0 }}">Slot {{ loop.index }} ({{ slot }})</option>{% endfor %}
+                        </select>
+                        <input type="text" placeholder="Slot Purpose" class="fixed-name" style="flex: 1.5;">
+                        <input type="text" placeholder="Teacher Name" class="fixed-teacher" style="flex: 1.5;">
+                        <button class="remove-btn" onclick="this.parentElement.remove()">×</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script>
+        const DAYS = {{ days|tojson }};
+        const SLOTS = {{ slots|tojson }};
+        let teachers = [];
+        let currentGrids = null;
+
+        // Theme Logic
+        function toggleTheme() {
+            document.body.classList.toggle('light-mode');
+            const isLight = document.body.classList.contains('light-mode');
+            localStorage.setItem('theme', isLight ? 'light' : 'dark');
+        }
+        if(localStorage.getItem('theme') === 'light') document.body.classList.add('light-mode');
+
+        window.onload = async () => {
+            try {
+                const res = await fetch('/api/get_config');
+                const data = await res.json();
+                if(data.teachers && data.teachers.length > 0) {
+                    document.getElementById('teacher_pool').value = data.teachers.join(', ');
+                    document.getElementById('max_labs').value = data.max_labs || 3;
+                }
+            } catch(e) { console.error("Failed to load config", e); }
+        };
+
+        function goToStep(n) {
+            if(n === 2) {
+                const val = document.getElementById('teacher_pool').value.trim();
+                if(!val) return alert("Please enter at least one teacher.");
+                teachers = val.split(',').map(t => t.trim()).filter(t => t);
+                updateSemesterTabs();
+            }
+            document.querySelectorAll('.wizard-step').forEach(s => s.classList.remove('active'));
+            document.getElementById('step' + n).classList.add('active');
+        }
+
+        function updateSemesterTabs() {
+            const cycle = document.getElementById('cycle_type').value;
+            const targetSems = cycle === 'odd' ? ['3', '5', '7'] : ['4', '6'];
+            const tabsContainer = document.getElementById('semTabs');
+            const panelsContainer = document.getElementById('semPanels');
+            
+            // Collect existing panels to preserve data
+            const existingPanels = {};
+            document.querySelectorAll('.sem-panel').forEach(p => {
+                existingPanels[p.id.replace('panel-', '')] = p;
+                p.remove(); // Remove from DOM but keep in memory
+            });
+
+            tabsContainer.innerHTML = '';
+            panelsContainer.innerHTML = '';
+            
+            targetSems.forEach((sem, idx) => {
+                const tab = document.createElement('div');
+                tab.className = 'sem-tab' + (idx === 0 ? ' active' : '');
+                tab.innerText = 'Semester ' + sem;
+                tab.onclick = () => switchSem(sem);
+                tab.dataset.sem = sem;
+                tabsContainer.appendChild(tab);
+                
+                let panel;
+                if(existingPanels[sem]) {
+                    panel = existingPanels[sem];
+                } else {
+                    const template = document.getElementById('semPanelTemplate').content.cloneNode(true);
+                    panel = template.querySelector('.sem-panel');
+                    panel.id = 'panel-' + sem;
+                }
+                
+                panel.className = 'sem-panel' + (idx === 0 ? ' active' : '');
+                
+                panel.querySelectorAll('select').forEach(sel => {
+                    const currentVal = sel.value; // Preserve selection
+                    if(sel.className.includes('sub-teacher') || sel.className.includes('lab-t')) {
+                        fillTeacherSelect(sel);
+                        sel.value = currentVal;
+                    }
+                });
+                
+                panelsContainer.appendChild(panel);
+            });
+        }
+
+        function fillTeacherSelect(select) {
+            select.innerHTML = '<option value="">Select Teacher</option>';
+            teachers.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = opt.innerText = t;
+                select.appendChild(opt);
+            });
+        }
+
+        function switchSem(sem) {
+            document.querySelectorAll('.sem-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.sem-panel').forEach(p => p.classList.remove('active'));
+            document.querySelector(`.sem-tab[data-sem="${sem}"]`).classList.add('active');
+            document.getElementById('panel-' + sem).classList.add('active');
+        }
+
+        function changeCredit(btn, delta) {
+            const input = btn.parentElement.querySelector('input');
+            let val = parseInt(input.value) + delta;
+            if(val < 1) val = 1;
+            if(val > 4) val = 4;
+            input.value = val;
+        }
+
+        function addSubjectRow(btn) {
+            const list = btn.parentElement.nextElementSibling;
+            const row = list.querySelector('.dynamic-row').cloneNode(true);
+            row.querySelector('.sub-name').value = '';
+            row.querySelector('.sub-credits').value = '3';
+            fillTeacherSelect(row.querySelector('select'));
+            list.appendChild(row);
+        }
+
+        function addLabRow(btn) {
+            const list = btn.parentElement.nextElementSibling;
+            const row = list.querySelector('.dynamic-row').cloneNode(true);
+            row.querySelector('.lab-name').value = '';
+            row.querySelectorAll('select').forEach(s => fillTeacherSelect(s));
+            list.appendChild(row);
+        }
+
+        function addFixedRow(btn) {
+            const container = btn.closest('.form-section').querySelector('.fixed-list-container');
+            const row = container.querySelector('.dynamic-row').cloneNode(true);
+            row.querySelectorAll('input').forEach(i => i.value = '');
+            container.appendChild(row);
+        }
+
+        async function generateCycle() {
+            const cycle_type = document.getElementById('cycle_type').value;
+            const max_labs = document.getElementById('max_labs').value;
+            
+            const semesters = {};
+            document.querySelectorAll('.sem-panel').forEach(panel => {
+                const sem = panel.id.split('-')[1];
+                semesters[sem] = {
+                    sat_holiday: panel.querySelector('.sem-sat-holiday').checked,
+                    subjects: Array.from(panel.querySelectorAll('.sub-list .dynamic-row')).map(r => ({
+                        name: r.querySelector('.sub-name').value,
+                        credits: r.querySelector('.sub-credits').value,
+                        teacher: r.querySelector('.sub-teacher').value
+                    })).filter(s => s.name),
+                    labs: Array.from(panel.querySelectorAll('.lab-list .dynamic-row')).map(r => ({
+                        name: r.querySelector('.lab-name').value,
+                        teachers: [r.querySelector('.lab-t1').value, r.querySelector('.lab-t2').value].filter(t => t)
+                    })).filter(l => l.name),
+                    fixed: Array.from(panel.querySelectorAll('.fixed-list-container .dynamic-row')).map(r => ({
+                        day: r.querySelector('.fixed-day').value,
+                        slot_idx: r.querySelector('.fixed-slot').value,
+                        name: r.querySelector('.fixed-name').value,
+                        teacher: r.querySelector('.fixed-teacher').value
+                    })).filter(f => f.name)
+                };
+            });
+
+            // Start Progress Animation
+            const overlay = document.getElementById('progressOverlay');
+            const msg = document.getElementById('progressMsg');
+            const fill = document.getElementById('mainPbarFill');
+            const percent = document.getElementById('pPercent');
+            
+            overlay.classList.add('active');
+            
+            const updateP = (p, text) => {
+                fill.style.width = p + '%';
+                percent.innerText = p + '%';
+                if(text) msg.innerText = text;
+            };
+
+            try {
+                updateP(5, "Initializing Engine...");
+                await new Promise(r => setTimeout(r, 600));
+                
+                updateP(25, "Batching Dual Labs...");
+                await new Promise(r => setTimeout(r, 800));
+
+                const response = await fetch('/api/generate_cycle', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ cycle_type, semesters, max_labs, teacher_pool: teachers })
+                });
+
+                updateP(60, "Allocating Faculty...");
+                await new Promise(r => setTimeout(r, 1000));
+                
+                updateP(85, "Validating Conflicts...");
+                await new Promise(r => setTimeout(r, 700));
+
+                const data = await response.json();
+                
+                updateP(100, "Finalizing Grid...");
+                await new Promise(r => setTimeout(r, 500));
+
+                if(data.error) {
+                    overlay.classList.remove('active');
+                    return alert("Generation failed: " + data.error);
+                }
+
+                currentGrids = data.grids;
+                renderFinalGrids(data.grids);
+                
+                setTimeout(() => {
+                    overlay.classList.remove('active');
+                    goToStep(3);
+                }, 400);
+
+            } catch(e) { 
+                overlay.classList.remove('active');
+                alert("Server Error: " + e.message); 
+            }
+        }
+
+        function renderFinalGrids(grids) {
+            const container = document.getElementById('resultsContent');
+            container.innerHTML = '';
+            
+            Object.entries(grids).forEach(([sem, grid]) => {
+                const sat_holiday = document.getElementById('panel-' + sem).querySelector('.sem-sat-holiday').checked;
+                const numDays = sat_holiday ? 5 : 6;
+
+                const wrap = document.createElement('div');
+                wrap.innerHTML = `<h2 style="margin: 3rem 0 1rem; color: var(--accent-primary)">Semester ${sem} Timetable</h2>`;
+                
+                const table = document.createElement('table');
+                table.className = 'timetable-grid';
+                let header = '<thead><tr><th>Day/Time</th>';
+                SLOTS.forEach((s, idx) => {
+                    if(idx === 2) header += `<th style="background:#1e293b; font-size:0.6rem">RECESS</th>`;
+                    if(idx === 4) header += `<th style="background:#1e293b; font-size:0.6rem">LUNCH</th>`;
+                    header += `<th>${s}</th>`;
+                });
+                header += '</tr></thead>';
+                table.innerHTML = header;
+
+                const tbody = document.createElement('tbody');
+                for(let d=0; d<numDays; d++) {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td style="font-weight:bold">${DAYS[d]}</td>`;
+                    
+                    for(let sIdx=0; sIdx<grid[d].length; sIdx++) {
+                        const slot = grid[d][sIdx];
+                        
+                        // Add Spacers
+                        if(sIdx === 2) tr.innerHTML += `<td style="background:#1e293b; writing-mode:vertical-rl; font-size:0.5rem; color:#475569">RECESS</td>`;
+                        if(sIdx === 4) tr.innerHTML += `<td style="background:#1e293b; writing-mode:vertical-rl; font-size:0.5rem; color:#475569">LUNCH</td>`;
+                        
+                        const td = document.createElement('td');
+                        if(!slot) {
+                            td.innerText = '-';
+                            tr.appendChild(td);
+                        } else if(slot.type === 'lab') {
+                            if(slot.part === 1) {
+                                td.setAttribute('colspan', '2');
+                                td.style.background = 'rgba(6, 182, 212, 0.1)';
+                                
+                                if(slot.parallel) {
+                                    const otherBatch = slot.batch === 'B1' ? 'B2' : 'B1';
+                                    td.innerHTML = `
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <div><span class="badge" style="background:#0891b2">${slot.batch}</span> <strong>${slot.name}</strong></div>
+                                            <div style="border-top:1px solid rgba(255,255,255,0.1); padding-top:0.25rem;">
+                                                <span class="badge" style="background:#475569">${otherBatch}</span> <strong>${slot.parallel}</strong>
+                                            </div>
+                                            <small style="font-size:0.75rem; color:var(--text-primary); font-weight:500;">${slot.teachers} | ${slot.b2_teachers}</small>
+                                        </div>
+                                    `;
+                                } else {
+                                    td.innerHTML = `<span class="badge">Lab ${slot.batch}</span><br><strong>${slot.name}</strong><br><small style="font-size:0.75rem; color:var(--text-primary); font-weight:500;">${slot.teachers}</small>`;
+                                }
+                                
+                                tr.appendChild(td);
+                                sIdx++; // Skip the next part
+                            }
+                        } else {
+                            if(slot.type === 'fixed') {
+                                td.innerHTML = `<strong style="color:var(--accent-primary)">${slot.name}</strong><br><small>${slot.teacher}</small>`;
+                                td.style.background = 'rgba(124, 58, 237, 0.05)';
+                            } else {
+                                td.innerHTML = `<strong>${slot.name}</strong><br><small>${slot.teacher}</small>`;
+                            }
+                            tr.appendChild(td);
+                        }
+                    }
+                    tbody.appendChild(tr);
+                }
+                table.appendChild(tbody);
+                wrap.appendChild(table);
+                container.appendChild(wrap);
+            });
+        }
+
+        async function exportCycle() {
+            const response = await fetch('/api/export_cycle', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ grids: currentGrids })
+            });
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Department_Timetable.xlsx`;
+            a.click();
+        }
+    </script>
+</body>
+</html>

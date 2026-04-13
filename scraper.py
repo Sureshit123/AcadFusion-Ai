@@ -1,0 +1,216 @@
+import requests
+from bs4 import BeautifulSoup
+import base64
+import logging
+import random
+import re
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Base URLs
+VTU_BASE = "https://results.vtu.ac.in/D25J26Ecbcs"
+VTU_INDEX = f"{VTU_BASE}/index.php"
+VTU_RESULT = f"{VTU_BASE}/resultpage.php"
+
+def get_headers():
+    return {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+    }
+
+def initialize_scrape(usn, retries=3):
+    """
+    Step 1: Starts a session, fetches the index page, extracts the hidden token
+    and captures the captcha image. Includes retries for VTU server instability.
+    Returns: (session, base64_captcha, hidden_token, error_msg)
+    """
+    import time
+    session = requests.Session()
+    session.verify = False
+    session.headers.update(get_headers())
+    
+    last_err = None
+    for attempt in range(retries):
+        try:
+            res = session.get(VTU_INDEX, timeout=15)
+            res.raise_for_status()
+            soup = BeautifulSoup(res.text, 'html.parser')
+            
+            # 1. Find Hidden Token
+            token_val = ""
+            token_name = "Token" # Fallback guess
+            hidden_inputs = soup.find_all('input', type='hidden')
+            for inp in hidden_inputs:
+                if inp.get('name') and inp.get('value'):
+                    if 'token' in inp.get('name', '').lower() or len(inp.get('value', '')) > 10:
+                        token_name = inp.get('name')
+                        token_val = inp.get('value')
+                        break
+
+            # 2. Extract Captcha Image URL
+            captcha_img = soup.find('img', src=lambda s: s and 'captcha' in s.lower())
+            if not captcha_img:
+                return session, None, None, "No captcha image found on VTU site. Site structure may have changed."
+                
+            from urllib.parse import urljoin
+            captcha_url = urljoin(VTU_INDEX, captcha_img['src'])
+            
+            # 3. Download Captcha Image (Increased timeout due to VTU server load)
+            captcha_res = session.get(captcha_url, timeout=15)
+            captcha_res.raise_for_status()
+            
+            b64_captcha = base64.b64encode(captcha_res.content).decode('utf-8')
+            
+            # Return the required state for Part 2
+            return session, b64_captcha, {"name": token_name, "value": token_val}, None
+            
+        except Exception as e:
+            last_err = str(e)
+            logger.warning(f"Timeout/Error on attempt {attempt+1} for {usn}: {e}")
+            time.sleep(2) # Wait before retry
+            
+    logger.error(f"Failed to initialize scrape for {usn} after {retries} attempts: {last_err}")
+    return None, None, None, last_err
+
+
+def complete_scrape(usn, session, token_dict, captcha_text):
+    """
+    Step 2: Submits the form with the captcha code and parses the result.
+    """
+    payload = {
+        'lns': usn,
+        'captchacode': captcha_text
+    }
+    
+    # Add hidden token if found
+    if token_dict and token_dict.get('name'):
+         payload[token_dict['name']] = token_dict['value']
+    
+    try:
+        # Some VTU sites use index.php for post, some use resultpage.php. We will try resultpage.
+        # But let's check what action URL the form has
+        # Usually it's resultpage.php
+        res = session.post(VTU_RESULT, data=payload, timeout=15)
+        
+        # If captcha is wrong, VTU usually returns to index with an alert
+        if "Invalid captcha" in res.text or "Invalid Captch" in res.text or "Redirecting" in res.text:
+             return {"usn": usn, "status": "Invalid Captcha"}
+             
+        if "Invalid USN" in res.text or "not available" in res.text.lower():
+             return {"usn": usn, "status": "Invalid/No Res"}
+             
+        # Debug dump
+        with open('latest_result.html', 'w', encoding='utf-8') as f:
+            f.write(res.text)
+            
+        return parse_vtu_html(usn, res.text)
+        
+    except Exception as e:
+        logger.error(f"Failed to complete scrape for {usn}: {e}")
+        return {"usn": usn, "status": "Network/Parse Error"}
+
+
+def parse_vtu_html(usn, html_content):
+    """
+    Dynamically extracts student details and all subjects from VTU result HTML.
+    Updated to support both table-based and div-based VTU result structures.
+    """
+    soup = BeautifulSoup(html_content, 'html.parser')
+    result = {
+        "usn": usn,
+        "name": "Unknown",
+        "total_marks": 0,
+        "max_marks": 0,
+        "sgpa": 0.0,
+        "status": "Pass",
+        "subjects": {}
+    }
+    
+    try:
+        # Extract Name
+        tds = soup.find_all('td')
+        for i, td in enumerate(tds):
+            text = td.get_text(strip=True).upper()
+            if "STUDENT NAME" in text and i + 1 < len(tds):
+                raw_name = tds[i+1].get_text(strip=True).title()
+                result["name"] = raw_name.lstrip(': ').strip()
+                break
+
+        # Extract Subjects dynamically
+        rows = soup.find_all('tr') + soup.find_all('div', class_='divTableRow')
+        for row in rows:
+            if row.name == 'div':
+                cols = row.find_all('div', class_='divTableCell')
+            else:
+                cols = row.find_all(['td', 'th'])
+                
+            col_texts = [c.get_text(strip=True) for c in cols]
+            
+            if len(col_texts) >= 5:
+                sub_code = ""
+                internal_str = "0"
+                external_str = "0"
+                total_str = "0"
+                res_flag = ""
+                
+                # New VTU format: [Code, Name, Internal, External, Total, Result, ...]
+                if len(col_texts[0]) >= 5 and any(c.isalpha() for c in col_texts[0]) and any(c.isdigit() for c in col_texts[0]) and 'SUBJECT' not in col_texts[0].upper():
+                    sub_code = col_texts[0]
+                    internal_str = col_texts[2] if len(col_texts) > 2 else "0"
+                    external_str = col_texts[3] if len(col_texts) > 3 else "0"
+                    total_str = col_texts[4] if len(col_texts) > 4 else "0"
+                    res_flag = col_texts[5] if len(col_texts) > 5 else ""
+                
+                # Old VTU format: [Serial, Code, Name, ..., Total, Result]
+                elif len(col_texts[1]) >= 5 and any(c.isalpha() for c in col_texts[1]) and any(c.isdigit() for c in col_texts[1]) and 'SUBJECT' not in col_texts[1].upper():
+                    sub_code = col_texts[1]
+                    if len(col_texts) >= 7:
+                        internal_str = col_texts[-4]
+                        external_str = col_texts[-3]
+                    total_str = col_texts[-2]
+                    res_flag = col_texts[-1]
+                
+                if sub_code:
+                    try:
+                        tot_val = int(total_str)
+                        int_val = int(internal_str)
+                        ext_val = int(external_str)
+                    except ValueError:
+                        tot_val = 0
+                        int_val = 0
+                        ext_val = 0
+                        
+                    result["subjects"][sub_code] = {
+                        "internal": int_val,
+                        "external": ext_val,
+                        "total": tot_val,
+                        "result": res_flag.upper()
+                    }
+             
+        # Extract Semester Total/SGPA (if present on the page)
+        sgpa_matches = re.findall(r'SGPA[\s:]*([0-9.]+)', html_content, re.IGNORECASE)
+        if sgpa_matches:
+             result["sgpa"] = float(sgpa_matches[0])
+             
+        # Calculate derived metrics
+        if result["subjects"]:
+            result["total_marks"] = sum(s["total"] for s in result["subjects"].values())
+            # For 2022+ schemes, some subjects have 100 max, some 50. Approximating default max marks realistically. 
+            # VTU typically uses 100 per subject.
+            result["max_marks"] = len(result["subjects"]) * 100
+            
+            if any(s["result"] in ['F', 'A', 'FAIL', 'ABSENT'] for s in result["subjects"].values()):
+                result["status"] = "Fail"
+            else:
+                result["status"] = "Pass"
+                
+    except Exception as e:
+        logger.error(f"Error parsing HTML for {usn}: {e}")
+        result["status"] = "Parse Error"
+        
+    return result

@@ -1,3 +1,4 @@
+import os
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash
 from models.database import db_instance
 
@@ -40,6 +41,18 @@ def login():
         email = request.form.get('email')
         password = request.form.get('password')
 
+        # 1. Check for Super Admin (from environment variables)
+        env_admin_user = os.environ.get('ADMIN_USERNAME')
+        env_admin_pass = os.environ.get('ADMIN_PASSWORD')
+        
+        if env_admin_user and env_admin_pass:
+            if email == env_admin_user and password == env_admin_pass:
+                session['user_id'] = 'admin_super_user'
+                session['user_name'] = 'Super Admin'
+                session['logged_in'] = True
+                return redirect(url_for('main.hub'))
+
+        # 2. Check for regular Database User
         user = db_instance.verify_user(email, password)
         if user:
             session['user_id'] = str(user['_id'])
@@ -55,3 +68,4 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for('auth.login'))
+

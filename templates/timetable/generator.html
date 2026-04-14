@@ -23,6 +23,49 @@
         .credit-btn { width: 30px; height: 30px; border: none; background: var(--accent-primary); color: white; border-radius: 4px; cursor: pointer; font-weight: bold; }
         .credit-btn:hover { background: var(--accent-secondary); }
         .sub-credits { width: 40px !important; text-align: center; background: transparent !important; border: none !important; color: white !important; font-weight: bold; padding: 0 !important; }
+
+        /* Teacher Autocomplete */
+        .autocomplete-container { position: relative; }
+        .suggestions-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #1e1b4b; /* Matches dark theme */
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+            margin-top: 5px;
+        }
+        body.light-mode .suggestions-dropdown {
+            background: white;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+        .suggestion-item {
+            padding: 0.8rem 1rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            transition: all 0.2s;
+        }
+        body.light-mode .suggestion-item {
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+        }
+        .suggestion-item:last-child { border-bottom: none; }
+        .suggestion-item:hover, .suggestion-item.active {
+            background: var(--accent-primary);
+            color: white;
+        }
+        .suggestion-hint {
+            font-size: 0.75rem;
+            opacity: 0.6;
+            margin-left: 0.5rem;
+        }
     </style>
 </head>
 <body>
@@ -54,7 +97,7 @@
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                     Logged in as: {{ session.get('user_name', 'Faculty') }}
                 </div>
-                <a href="{{ url_for('auth.logout') }}" class="logout">Logout</a>
+                <a href="{{ url_for('auth.logout') }}" class="logout" style="color: #ef4444; font-weight: 700; text-decoration: none; font-size: 0.85rem;">Logout</a>
             </div>
         </div>
 
@@ -77,7 +120,10 @@
                 </div>
                 <div class="input-group" style="margin-top: 1.5rem;">
                     <label>Department Teacher Pool (Comma separated names)</label>
-                    <textarea id="teacher_pool" rows="3" placeholder="Prof. Patil, Dr. Noola, Ms. Bharati..."></textarea>
+                    <div class="autocomplete-container">
+                        <textarea id="teacher_pool" rows="5" placeholder="Dr. Akhil Sharma, Prof. Ashok Sharma, Prof. Sunil Sharma..." autocomplete="off" style="width: 100%; min-height: 120px; font-family: inherit; font-size: 0.95rem;"></textarea>
+                        <div id="teacherSuggestions" class="suggestions-dropdown"></div>
+                    </div>
                 </div>
                 <button class="btn" style="width: 100%; margin-top: 2rem;" onclick="goToStep(2)">Next: Configure Semesters &rarr;</button>
             </div>
@@ -121,19 +167,17 @@
         </div>
     </div>
 
-    <footer class="developer-credit">
-        <div class="shine-text" style="font-size: 1rem;">
-            © 2026 Designed & Developed by Sureshit Sharma<br>
-            Department of Information Science & Engineering (ISE)
-        </div>
-    </footer>
-
     <!-- Template for Semester Panel -->
     <template id="semPanelTemplate">
         <div class="sem-panel">
-            <div style="margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px;">
-                <input type="checkbox" class="sem-sat-holiday" style="width: auto;">
-                <label style="font-size: 0.9rem; margin: 0;">Saturday is Holiday for this Semester</label>
+            <div style="margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px;">
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" class="sem-sat-holiday" style="width: auto;" onchange="const r = this.parentElement.nextElementSibling; r.style.display = this.checked ? 'block' : 'none';">
+                    <label style="font-size: 0.9rem; margin: 0;">Saturday is Holiday for this Semester</label>
+                </div>
+                <div class="holiday-reason-container" style="display: none; padding-left: 1.8rem;">
+                    <input type="text" class="sem-holiday-reason" placeholder="Enter reason (e.g., AICTE Activity, Placement Training...)" style="font-size: 0.8rem; background: rgba(0,0,0,0.2);">
+                </div>
             </div>
 
             <div class="form-section" style="background: rgba(255,255,255,0.01);">
@@ -197,7 +241,133 @@
         const DAYS = {{ days|tojson }};
         const SLOTS = {{ slots|tojson }};
         let teachers = [];
+        let allKnownTeachers = [];
         let currentGrids = null;
+
+        // --- Teacher Autocomplete Implementation ---
+        const teacherPool = document.getElementById('teacher_pool');
+        const suggestionsBox = document.getElementById('teacherSuggestions');
+        let selectedSuggestionIndex = -1;
+        let activeSuggestions = [];
+
+        function initAutocomplete() {
+            teacherPool.addEventListener('input', handleTeacherInput);
+            teacherPool.addEventListener('keydown', handleTeacherKeydown);
+            document.addEventListener('click', (e) => {
+                if (!teacherPool.contains(e.target) && !suggestionsBox.contains(e.target)) {
+                    hideSuggestions();
+                }
+            });
+        }
+
+        function handleTeacherInput() {
+            const value = teacherPool.value;
+            const cursorPosition = teacherPool.selectionStart;
+            
+            // Get all text up to cursor and find last comma
+            const textUpToCursor = value.substring(0, cursorPosition);
+            const lastCommaIndex = textUpToCursor.lastIndexOf(',');
+            const currentToken = textUpToCursor.substring(lastCommaIndex + 1).trimStart();
+
+            if (currentToken.length < 1) {
+                hideSuggestions();
+                return;
+            }
+
+            // Filter teachers: not already in pool, and matching current token
+            const existingInPool = value.split(',').map(t => t.trim().toLowerCase());
+            activeSuggestions = allKnownTeachers.filter(t => {
+                const name = t.trim();
+                return name.toLowerCase().startsWith(currentToken.toLowerCase()) && 
+                       !existingInPool.includes(name.toLowerCase());
+            }).slice(0, 10); // Limit to 10 suggestions
+
+            if (activeSuggestions.length > 0) {
+                showSuggestions(activeSuggestions);
+            } else {
+                hideSuggestions();
+            }
+        }
+
+        function showSuggestions(list) {
+            suggestionsBox.innerHTML = list.map((name, index) => `
+                <div class="suggestion-item ${index === selectedSuggestionIndex ? 'active' : ''}" 
+                     onclick="selectSuggestion('${name}')">
+                    ${name} <span class="suggestion-hint">Previous teacher</span>
+                </div>
+            `).join('');
+            suggestionsBox.style.display = 'block';
+        }
+
+        function hideSuggestions() {
+            suggestionsBox.style.display = 'none';
+            selectedSuggestionIndex = -1;
+            activeSuggestions = [];
+        }
+
+        function handleTeacherKeydown(e) {
+            if (suggestionsBox.style.display === 'none') return;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedSuggestionIndex = (selectedSuggestionIndex + 1) % activeSuggestions.length;
+                updateSuggestionHighlight();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedSuggestionIndex = (selectedSuggestionIndex - 1 + activeSuggestions.length) % activeSuggestions.length;
+                updateSuggestionHighlight();
+            } else if ((e.key === 'Enter' || e.key === 'Tab') && selectedSuggestionIndex > -1) {
+                e.preventDefault();
+                selectSuggestion(activeSuggestions[selectedSuggestionIndex]);
+            } else if (e.key === 'Escape') {
+                hideSuggestions();
+            }
+        }
+
+        function updateSuggestionHighlight() {
+            const items = suggestionsBox.querySelectorAll('.suggestion-item');
+            items.forEach((item, idx) => {
+                item.classList.toggle('active', idx === selectedSuggestionIndex);
+            });
+        }
+
+        function selectSuggestion(name) {
+            const value = teacherPool.value;
+            const cursorPosition = teacherPool.selectionStart;
+            const textUpToCursor = value.substring(0, cursorPosition);
+            const textAfterCursor = value.substring(cursorPosition);
+            
+            const lastCommaIndex = textUpToCursor.lastIndexOf(',');
+            const beforeToken = value.substring(0, lastCommaIndex + 1);
+            
+            const space = lastCommaIndex === -1 ? '' : ' ';
+            teacherPool.value = beforeToken + space + name + ', ' + textAfterCursor.trimStart();
+            
+            hideSuggestions();
+            teacherPool.focus();
+            
+            // Re-sync global teachers list
+            updateTeacherList();
+        }
+
+        function updateTeacherList() {
+            const poolText = teacherPool.value;
+            teachers = poolText.split(',')
+                .map(t => t.trim())
+                .filter(t => t.length > 0);
+            
+            // Re-populate all dropdowns
+            document.querySelectorAll('select.sub-teacher, select.lab-t1, select.lab-t2').forEach(sel => {
+                const currentVal = sel.value;
+                sel.innerHTML = '<option value="">-- Select Teacher --</option>' +
+                    teachers.map(t => `<option value="${t}">${t}</option>`).join('');
+                sel.value = currentVal;
+            });
+        }
+
+        // Add periodic sync for manual typing
+        teacherPool.addEventListener('blur', updateTeacherList);
+        // --- End Autocomplete Logic ---
 
         // Theme Logic
         function toggleTheme() {
@@ -208,15 +378,109 @@
         if(localStorage.getItem('theme') === 'light') document.body.classList.add('light-mode');
 
         window.onload = async () => {
-            try {
-                const res = await fetch('/api/get_config');
-                const data = await res.json();
-                if(data.teachers && data.teachers.length > 0) {
-                    document.getElementById('teacher_pool').value = data.teachers.join(', ');
-                    document.getElementById('max_labs').value = data.max_labs || 3;
-                }
-            } catch(e) { console.error("Failed to load config", e); }
+            initAutocomplete();
+            
+            // Check if we are modifying a historical cycle
+            const urlParams = new URLSearchParams(window.location.search);
+            const modifyId = urlParams.get('modify');
+            
+            if (modifyId) {
+                await loadHistoricalConfig(modifyId);
+            } else {
+                // Regular new session load
+                try {
+                    const res = await fetch('/api/get_config');
+                    const data = await res.json();
+                    if(data.teachers && data.teachers.length > 0) {
+                        allKnownTeachers = data.teachers;
+                        document.getElementById('teacher_pool').value = data.teachers.join(', ');
+                        document.getElementById('max_labs').value = data.max_labs || 3;
+                        updateTeacherList();
+                    }
+                } catch(e) { console.error("Failed to load config", e); }
+            }
         };
+
+        async function loadHistoricalConfig(id) {
+            try {
+                const res = await fetch(`/api/cycle/${id}/config`);
+                const config = await res.json();
+                
+                if (!res.ok) throw new Error(config.error || "Failed to load");
+                
+                if (!config || Object.keys(config).length === 0) {
+                    alert("This timetable was generated before the modification feature was added and doesn't contain the necessary setup data. Please create a new one.");
+                    window.location.href = '/timetable';
+                    return;
+                }
+
+                // 1. Populate Step 1
+                document.getElementById('cycle_type').value = config.cycle_type || 'odd';
+                document.getElementById('max_labs').value = config.max_labs || 3;
+                document.getElementById('teacher_pool').value = (config.teacher_pool || []).join(', ');
+                updateTeacherList();
+
+                // 2. Prepare Step 2 tabs/panels
+                updateSemesterTabs();
+
+                // 3. Populate Semester Details
+                for (const [sem, data] of Object.entries(config.semesters || {})) {
+                    const panel = document.getElementById('panel-' + sem);
+                    if (!panel) continue;
+
+                    // Set Saturday Holiday
+                    const holidayCheck = panel.querySelector('.sem-sat-holiday');
+                    holidayCheck.checked = data.sat_holiday || false;
+                    const reasonContainer = panel.querySelector('.holiday-reason-container');
+                    reasonContainer.style.display = holidayCheck.checked ? 'block' : 'none';
+                    panel.querySelector('.sem-holiday-reason').value = data.holiday_reason || '';
+
+                    // Clear and Populate Subjects
+                    const subList = panel.querySelector('.sub-list');
+                    subList.innerHTML = ''; // Clear defaults
+                    (data.subjects || []).forEach(sub => {
+                        const row = addSubjectRow(panel.querySelector('.section-header button')); // Pass the "Add" button
+                        row.querySelector('.sub-name').value = sub.name;
+                        row.querySelector('.sub-credits').value = sub.credits;
+                        row.querySelector('.sub-teacher').value = sub.teacher;
+                    });
+
+                    // Clear and Populate Labs (Check if lab-list exists)
+                    const labList = panel.querySelector('.lab-list');
+                    if (labList) {
+                        labList.innerHTML = '';
+                        (data.labs || []).forEach(lab => {
+                            const row = addLabRow(labList.previousElementSibling.querySelector('button'));
+                            row.querySelector('.lab-name').value = lab.name;
+                            const selects = row.querySelectorAll('select');
+                            if (selects[0] && lab.teachers[0]) selects[0].value = lab.teachers[0];
+                            if (selects[1] && lab.teachers[1]) selects[1].value = lab.teachers[1];
+                        });
+                    }
+
+                    // Clear and Populate Fixed Slots
+                    const fixedList = panel.querySelector('.fixed-list-container');
+                    if (fixedList) {
+                        fixedList.innerHTML = '';
+                        (data.fixed || []).forEach(fs => {
+                            const row = addFixedRow(fixedList.previousElementSibling.querySelector('button'));
+                            row.querySelector('.fixed-day').value = fs.day;
+                            row.querySelector('.fixed-slot').value = fs.slot_idx;
+                            row.querySelector('.fixed-name').value = fs.name;
+                            row.querySelector('.fixed-teacher').value = fs.teacher;
+                        });
+                    }
+                }
+                
+                // 4. Auto-navigate to Step 2 for immediate editing
+                setTimeout(() => goToStep(2), 100);
+                
+                alert("Historical configuration loaded successfully. You can now modify and regenerate.");
+            } catch (e) {
+                console.error("Failed to load historical config:", e);
+                alert("Could not load this configuration: " + e.message);
+            }
+        }
 
         function goToStep(n) {
             if(n === 2) {
@@ -296,7 +560,7 @@
             const input = btn.parentElement.querySelector('input');
             let val = parseInt(input.value) + delta;
             if(val < 1) val = 1;
-            if(val > 4) val = 4;
+            if(val > 5) val = 5;
             input.value = val;
         }
 
@@ -307,21 +571,25 @@
             row.querySelector('.sub-credits').value = '3';
             fillTeacherSelect(row.querySelector('select'));
             list.appendChild(row);
+            return row;
         }
 
         function addLabRow(btn) {
             const list = btn.parentElement.nextElementSibling;
             const row = list.querySelector('.dynamic-row').cloneNode(true);
             row.querySelector('.lab-name').value = '';
-            row.querySelectorAll('select').forEach(s => fillTeacherSelect(s));
+            row.querySelectorAll('select').forEach(fillTeacherSelect);
             list.appendChild(row);
+            return row;
         }
 
         function addFixedRow(btn) {
-            const container = btn.closest('.form-section').querySelector('.fixed-list-container');
+            const container = btn.parentElement.nextElementSibling;
             const row = container.querySelector('.dynamic-row').cloneNode(true);
-            row.querySelectorAll('input').forEach(i => i.value = '');
+            row.querySelector('.fixed-name').value = '';
+            row.querySelector('.fixed-teacher').value = '';
             container.appendChild(row);
+            return row;
         }
 
         async function generateCycle() {
@@ -333,6 +601,7 @@
                 const sem = panel.id.split('-')[1];
                 semesters[sem] = {
                     sat_holiday: panel.querySelector('.sem-sat-holiday').checked,
+                    holiday_reason: panel.querySelector('.sem-holiday-reason').value.trim(),
                     subjects: Array.from(panel.querySelectorAll('.sub-list .dynamic-row')).map(r => ({
                         name: r.querySelector('.sub-name').value,
                         credits: r.querySelector('.sub-credits').value,
@@ -481,10 +750,36 @@
                     }
                     tbody.appendChild(tr);
                 }
+                
+                // --- Add special Saturday Holiday row if applicable ---
+                if (sat_holiday) {
+                    const holidayMetadata = grid.find(item => item && item.holiday_reason);
+                    const reason = holidayMetadata ? holidayMetadata.holiday_reason : "Holiday";
+                    const trHoliday = document.createElement('tr');
+                    trHoliday.innerHTML = `
+                        <td style="font-weight:bold; color: #94a3b8;">Saturday</td>
+                        <td colspan="${SLOTS.length + 2}" style="padding: 1.5rem; text-align: center; color: var(--accent-primary); letter-spacing: 1px;">
+                            <strong>OFF DAY: ${reason.toUpperCase()}</strong>
+                        </td>
+                    `;
+                    tbody.appendChild(trHoliday);
+                }
+                
                 table.appendChild(tbody);
                 wrap.appendChild(table);
                 container.appendChild(wrap);
             });
+
+            // Add Regenerate button at the bottom
+            const regenBox = document.createElement('div');
+            regenBox.style.cssText = "margin-top: 3rem; display: flex; justify-content: center; gap: 1rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 2rem;";
+            regenBox.innerHTML = `
+                <button class="btn" onclick="generateCycle()" style="padding: 1rem 2rem; font-size: 1.1rem; background: var(--accent-primary);">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:0.5rem"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+                    Regenerate Timetable
+                </button>
+            `;
+            container.appendChild(regenBox);
         }
 
         async function exportCycle() {
@@ -501,5 +796,11 @@
             a.click();
         }
     </script>
+    <footer class="developer-credit">
+        <div class="shine-text">
+            © 2026 Designed & Developed by Sreshit Sharma<br>
+            Department of Information Science & Engineering (ISE)
+        </div>
+    </footer>
 </body>
 </html>

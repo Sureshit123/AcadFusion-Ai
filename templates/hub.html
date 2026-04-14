@@ -20,14 +20,18 @@
                         <span class="brand-tagline">Result Analyzer & Intelligent Timetable System</span>
                     </div>
                 </a>
-                <p style="color: var(--text-primary); font-weight: 700; font-size: 1.1rem;">Welcome, {{ name }}!</p>
+                <p style="color: var(--text-primary); font-weight: 700; font-size: 1.1rem; margin-top: 2rem;">Welcome, {{ name }}!</p>
                 <p style="color: var(--text-secondary); font-size: 0.85rem;">Select a module to get started.</p>
             </div>
             <div style="display: flex; align-items: center; gap: 1.5rem;">
                 <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
                 </button>
-                <a href="{{ url_for('auth.logout') }}" class="logout">Logout</a>
+                <div class="user-badge" style="display: flex; align-items: center; gap: 0.5rem; background: rgba(255,255,255,0.05); padding: 0.4rem 1rem; border-radius: 99px; border: 1px solid var(--glass-border); font-size: 0.8rem; color: var(--text-secondary);">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    Logged in as: {{ session.get('user_name', 'Faculty') }}
+                </div>
+                <a href="{{ url_for('auth.logout') }}" class="logout" style="color: #ef4444; font-weight: 700; text-decoration: none; font-size: 0.85rem;">Logout</a>
             </div>
         </div>
     </div>
@@ -45,11 +49,17 @@
             <p>Generate conflict-free academic schedules based on credit hours, lab batches, and global teacher availability.</p>
         </a>
 
+        <a href="{{ url_for('main.history') }}" class="card" style="flex: 1; min-width: 250px; max-width: 300px;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">📜</div>
+            <h2>System History</h2>
+            <p>Access your past result analysis reports and generated timetables in a centralized and organized dashboard.</p>
+        </a>
+
         <div class="card disabled-card" style="flex: 1; min-width: 250px; max-width: 300px;">
             <div style="font-size: 3rem; margin-bottom: 1rem;">🚀</div>
             <h2>
                 Timetable Optimizer
-                <span class="future-badge">Future Scope</span>
+                <span class="future-badge">Comming Soon</span>
             </h2>
             <p>Upload raw drafts or structured text lists to automatically resolve conflicts and remove idle gaps using AI.</p>
         </div>
@@ -57,7 +67,7 @@
 
     <footer class="developer-credit">
         <div class="shine-text">
-            © 2026 Designed & Developed by Sureshit Sharma<br>
+            © 2026 Designed & Developed by Sreshit Sharma<br>
             Department of Information Science & Engineering (ISE)
         </div>
     </footer>

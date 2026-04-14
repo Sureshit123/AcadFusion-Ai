@@ -32,15 +32,29 @@
                     <span class="brand-tagline" style="font-size: 0.65rem;">Result Analyzer & Intelligent Timetable System</span>
                 </div>
             </a>
-            <div style="display: flex; align-items: center; gap: 1.5rem;">
-                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-                </button>
-                <div class="user-badge">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                    Logged in as: {{ session.get('user_name', 'Faculty') }}
+            <div class="header-gadgets-stacked">
+                <div class="gadget-row-top">
+                    <div class="user-info-badge">
+                        <div class="user-pill">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                            <span>{{ session.get('user_name', 'Faculty') }}</span>
+                        </div>
+                        <a href="{{ url_for('auth.logout') }}" class="logout-link">Logout</a>
+                    </div>
                 </div>
-                <a href="{{ url_for('auth.logout') }}" class="logout">Logout</a>
+                <div class="gadget-row-bottom">
+                    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    </button>
+                    <div class="mode-toggle-container" title="Switch between Simulation and Live VTU Mode">
+                        <span class="mode-label active" id="label-demo">Demo</span>
+                        <label class="switch">
+                            <input type="checkbox" id="modeToggle" onchange="toggleMockMode(this)" {% if config.get('VTU_MOCK_MODE') == False %}checked{% endif %}>
+                            <span class="slider round"></span>
+                        </label>
+                        <span class="mode-label" id="label-live">Live</span>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -83,10 +97,45 @@
             </div>
             <div id="currentStatus">Starting engine...</div>
             
-            <a id="downloadBtn" class="btn" href="#">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                Download Excel Report
-            </a>
+            <div class="action-buttons-group" style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                <a id="downloadBtn" class="btn" href="#" style="flex: 2; display: none;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download Excel Report
+                </a>
+                <button id="viewResultsBtn" class="btn" onclick="openResultsPreview()" style="flex: 1; background: var(--accent-secondary); display: none;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    View Live
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <div id="resultsModal" class="modal" style="display: none; padding: 2rem;">
+        <div class="modal-content" style="max-width: 1000px; width: 95%; height: 90vh; overflow: hidden; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h3>Live Result Preview</h3>
+                <button onclick="document.getElementById('resultsModal').style.display='none'" style="background:none; border:none; color:var(--text-secondary); cursor:pointer; font-size: 1.5rem;">&times;</button>
+            </div>
+            <div id="resultsTableContainer" style="flex: 1; overflow: auto; background: rgba(0,0,0,0.2); border-radius: 12px; border: 1px solid var(--glass-border);">
+                <table class="preview-table" id="previewTable">
+                    <thead>
+                        <tr>
+                            <th>USN</th>
+                            <th>Student Name</th>
+                            <th>Total Marks</th>
+                            <th>Percentage</th>
+                            <th>Result</th>
+                        </tr>
+                    </thead>
+                    <tbody id="previewBody">
+                        <!-- Content via JS -->
+                    </tbody>
+                </table>
+            </div>
+            <div style="margin-top: 1rem; display: flex; justify-content: flex-end;">
+                <button class="btn" style="padding: 0.5rem 1.5rem;" onclick="document.getElementById('resultsModal').style.display='none'">Close Preview</button>
+            </div>
         </div>
     </div>
 
@@ -105,7 +154,7 @@
 
     <footer class="developer-credit">
         <div class="shine-text" style="font-size: 0.9rem;">
-            &copy; 2026 Designed & Developed by Sureshit Sharma<br>
+            &copy; 2026 Designed & Developed by Sreshit Sharma<br>
             Department of Information Science & Engineering (ISE)
         </div>
     </footer>

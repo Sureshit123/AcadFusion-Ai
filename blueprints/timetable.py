@@ -4,6 +4,7 @@ from models.database import db_instance
 import pandas as pd
 import io
 import time
+from bson import ObjectId
 
 timetable_bp = Blueprint('timetable', __name__)
 
@@ -171,6 +172,10 @@ class DepartmentCycleGenerator:
                 if not placed: return None, f"Could not schedule lab {lab_a['name']} for Sem {sem}"
 
         # 3. Place Subjects
+        # Track subjects already assigned to a day for this semester
+        # Initialize with 6 slots (Mon-Sat) to accommodate all possible day configurations
+        sem_day_subjects = {sem: [set() for _ in range(6)] for sem in self.semesters_data}
+        
         for sem, data in self.semesters_data.items():
             sat_holiday = data.get('sat_holiday', False)
             num_days = 5 if sat_holiday else 6
@@ -179,16 +184,29 @@ class DepartmentCycleGenerator:
                 teacher = sub['teacher']
                 for _ in range(credits):
                     placed = False
-                    for s in range(len(SLOTS)):
+                    # Shuffle slots to avoid always filling morning first
+                    slot_indices = list(range(len(SLOTS)))
+                    random.shuffle(slot_indices)
+                    
+                    for s in slot_indices:
                         days_list = list(range(num_days))
                         random.shuffle(days_list)
                         for d in days_list:
+                            # CONSTRAINT: One class of ONE subject in ONE day
+                            if sub['name'] in sem_day_subjects[sem][d]: continue
+                            
                             if self.grids[sem][d][s] is None and self.is_resource_free([teacher], False, d, s):
                                 self.grids[sem][d][s] = {"type": "subject", "name": sub['name'], "teacher": teacher}
                                 self.mark_busy([teacher], False, d, s)
+                                sem_day_subjects[sem][d].add(sub['name'])
                                 placed = True; break
                         if placed: break
-                    if not placed: return None, f"Could not place subject {sub['name']} (Sem {sem})"
+                    if not placed: return None, f"Could not place subject {sub['name']} (Sem {sem}) - Try increasing slots or allowing Saturday classes."
+
+        # Add holiday reason to the grid metadata if applicable
+        for sem, data in self.semesters_data.items():
+            if data.get('sat_holiday') and data.get('holiday_reason'):
+                self.grids[sem].append({'holiday_reason': data['holiday_reason']})
 
         return self.grids, None
 
@@ -213,8 +231,20 @@ def generate_cycle():
     
     if err: return jsonify({'error': err}), 400
     
-    db_instance.save_cycle(cycle_type, grids, session['user_id'])
+    # Save cycle with full input configuration for future modification
+    db_instance.save_cycle(cycle_type, grids, session['user_id'], input_config=data)
     return jsonify({'success': True, 'grids': grids})
+
+@timetable_bp.route('/api/cycle/<id>/config')
+def get_cycle_config(id):
+    if 'user_id' not in session: return jsonify({'error': 'Unauthorized'}), 401
+    try:
+        cycle = db_instance.db['cycles'].find_one({'_id': ObjectId(id), 'user_id': session['user_id']})
+        if not cycle: return jsonify({'error': 'Cycle not found'}), 404
+        # Return only the input_config part
+        return jsonify(cycle.get('input_config', {}))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
     
     # Save cycle and teachers status
@@ -242,22 +272,79 @@ def export_cycle():
             df_data = []
             cols = ["Day", "09:00-10:00", "10:00-11:00", "RECESS", "11:15-12:15", "12:15-01:15", "LUNCH", "02:15-03:15", "03:15-04:15", "04:15-05:15"]
             for d_idx, day_name in enumerate(DAYS):
-                if d_idx >= len(grid): continue
-                row = [day_name]
-                for s_idx in range(len(SLOTS)):
-                    if s_idx == 2: row.append("RECESS")
-                    if s_idx == 4: row.append("LUNCH")
-                    cell = grid[d_idx][s_idx]
-                    if not cell: row.append("-")
-                    elif cell['type'] == 'lab': 
-                        base = f"{cell['name']} ({cell['batch']}: {cell['teachers']})"
-                        if cell.get('parallel'):
-                            base += f" & {cell['parallel']} (B2: {cell['b2_teachers']})"
-                        row.append(base)
-                    else: row.append(f"{cell['name']} ({cell.get('teacher', 'FIXED')})")
-                df_data.append(row)
+                # Check for holiday reason metadata at the end of the grid list
+                holiday_metadata = next((x for x in grid if isinstance(x, dict) and 'holiday_reason' in x), None)
+                
+                if d_idx >= 6: continue # Safety
+                
+                # Check if this day exists in grid as a list of slots
+                if d_idx < len(grid) and isinstance(grid[d_idx], list):
+                    row = [day_name]
+                    for s_idx in range(len(SLOTS)):
+                        if s_idx == 2: row.append("RECESS")
+                        if s_idx == 4: row.append("LUNCH")
+                        cell = grid[d_idx][s_idx]
+                        if not cell: row.append("-")
+                        elif cell['type'] == 'lab': 
+                            base = f"{cell['name']} ({cell['batch']}: {cell['teachers']})"
+                            if cell.get('parallel'):
+                                base += f" & {cell['parallel']} (B2: {cell['b2_teachers']})"
+                            row.append(base)
+                        else: row.append(f"{cell['name']} ({cell.get('teacher', 'FIXED')})")
+                    df_data.append(row)
+                elif day_name == "Saturday" and holiday_metadata:
+                    # Insert a row for Saturday holiday
+                    row = [day_name] + ["OFF DAY: " + holiday_metadata['holiday_reason'].upper()] + [""] * (len(cols) - 2)
+                    df_data.append(row)
             df = pd.DataFrame(df_data, columns=cols)
             df.to_excel(writer, index=False, sheet_name=f"Semester_{sem}")
             
     output.seek(0)
     return send_file(output, as_attachment=True, download_name=f"Department_Timetable.xlsx")
+@timetable_bp.route('/api/download_historical_timetable/<id>')
+def download_historical_timetable(id):
+    if 'user_id' not in session: return jsonify({'error': 'Unauthorized'}), 401
+    
+    try:
+        cycle = db_instance.db['cycles'].find_one({'_id': ObjectId(id), 'user_id': session['user_id']})
+        if not cycle: return "Timetable not found", 404
+        
+        grids = cycle['data']
+        cycle_type = cycle.get('cycle_type', 'generated')
+        
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            for sem, grid in grids.items():
+                df_data = []
+                cols = ["Day", "09:00-10:00", "10:00-11:00", "RECESS", "11:15-12:15", "12:15-01:15", "LUNCH", "02:15-03:15", "03:15-04:15", "04:15-05:15"]
+                for d_idx, day_name in enumerate(DAYS):
+                    holiday_metadata = next((x for x in grid if isinstance(x, dict) and 'holiday_reason' in x), None)
+                    
+                    if d_idx >= 6: continue
+                    
+                    if d_idx < len(grid) and isinstance(grid[d_idx], list):
+                        row = [day_name]
+                        for s_idx in range(len(SLOTS)):
+                            if s_idx == 2: row.append("RECESS")
+                            if s_idx == 4: row.append("LUNCH")
+                            cell = grid[d_idx][s_idx]
+                            if not cell: row.append("-")
+                            elif cell['type'] == 'lab': 
+                                base = f"{cell['name']} ({cell['batch']}: {cell['teachers']})"
+                                if cell.get('parallel'):
+                                    base += f" & {cell['parallel']} (B2: {cell['b2_teachers']})"
+                                row.append(base)
+                            else: row.append(f"{cell['name']} ({cell.get('teacher', 'FIXED')})")
+                        df_data.append(row)
+                    elif day_name == "Saturday" and holiday_metadata:
+                        row = [day_name] + ["OFF DAY: " + holiday_metadata['holiday_reason'].upper()] + [""] * (len(cols) - 2)
+                        df_data.append(row)
+                df = pd.DataFrame(df_data, columns=cols)
+                df.to_excel(writer, index=False, sheet_name=f"Semester_{sem}")
+                
+        output.seek(0)
+        return send_file(output, as_attachment=True, download_name=f"AcadFusion_{cycle_type.capitalize()}_Timetable.xlsx")
+        
+    except Exception as e:
+        print(f"Historical Download Error: {e}")
+        return "Internal Server Error", 500

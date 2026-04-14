@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>History Hub | AcadFusion AI</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+    <div class="dashboard-container" style="max-width: 1100px;">
+        <div class="header">
+            <a href="/hub" class="brand-header">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="AcadFusion AI" class="brand-logo">
+                <div class="brand-info">
+                    <span class="brand-name">History Hub</span>
+                    <span class="brand-tagline">Centralized System Records</span>
+                </div>
+            </a>
+            <div style="display: flex; align-items: center; gap: 1.5rem;">
+                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                </button>
+                <div class="user-badge" style="display: flex; align-items: center; gap: 0.5rem; background: rgba(255,255,255,0.05); padding: 0.4rem 1rem; border-radius: 99px; border: 1px solid var(--glass-border); font-size: 0.8rem; color: var(--text-secondary);">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    Logged in as: {{ session.get('user_name', 'Faculty') }}
+                </div>
+                <a href="{{ url_for('auth.logout') }}" class="logout" style="color: #ef4444; font-weight: 700; text-decoration: none; font-size: 0.85rem;">Logout</a>
+            </div>
+        </div>
+
+        <div class="history-grid">
+            <!-- Results History Section -->
+            <div class="history-card-box">
+                <div class="history-card-header">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <span style="font-size: 1.5rem;">📊</span>
+                        <h3>Result Analysis History</h3>
+                    </div>
+                </div>
+                <div id="resultsList" class="history-hub-list">
+                    <div class="history-empty">Loading results history...</div>
+                </div>
+            </div>
+
+            <!-- Timetable History Section -->
+            <div class="history-card-box">
+                <div class="history-card-header">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <span style="font-size: 1.5rem;">📅</span>
+                        <h3>Timetable History</h3>
+                    </div>
+                </div>
+                <div id="timetableList" class="history-hub-list">
+                    <div class="history-empty">Loading timetable history...</div>
+                </div>
+            </div>
+        </div>
+        
+        <div style="margin-top: 2rem; text-align: center;">
+            <a href="/hub" class="btn" style="display: inline-flex; width: auto; padding: 0.6rem 2rem; border: 1px solid var(--glass-border);">
+                Back to Hub
+            </a>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div id="resultsModal" class="modal" style="display: none; padding: 2rem;">
+        <div class="modal-content" style="max-width: 1000px; width: 95%; height: 90vh; overflow: hidden; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h3>Live Result Preview</h3>
+                <button onclick="document.getElementById('resultsModal').style.display='none'" style="background:none; border:none; color:var(--text-secondary); cursor:pointer; font-size: 1.5rem;">&times;</button>
+            </div>
+            <div id="resultsTableContainer" style="flex: 1; overflow: auto; background: rgba(0,0,0,0.2); border-radius: 12px; border: 1px solid var(--glass-border);">
+                <table class="preview-table" id="previewTable">
+                    <thead>
+                        <tr>
+                            <th>USN</th>
+                            <th>Student Name</th>
+                            <th>Total Marks</th>
+                            <th>Percentage</th>
+                            <th>Result</th>
+                        </tr>
+                    </thead>
+                    <tbody id="previewBody"></tbody>
+                </table>
+            </div>
+            <div style="margin-top: 1rem; display: flex; justify-content: flex-end;">
+                <button class="btn" style="padding: 0.5rem 1.5rem;" onclick="document.getElementById('resultsModal').style.display='none'">Close Preview</button>
+            </div>
+        </div>
+    </div>
+
+    <footer class="developer-credit">
+        <div class="shine-text">
+            © 2026 Designed & Developed by Sreshit Sharma<br>
+            Department of Information Science & Engineering (ISE)
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', loadAllHistory);
+
+        async function loadAllHistory() {
+            try {
+                const res = await fetch('/api/history/all');
+                const data = await res.json();
+                
+                renderResults(data.results);
+                renderTimetables(data.timetables);
+            } catch (e) {
+                console.error("Failed to load history:", e);
+            }
+        }
+
+        function renderResults(jobs) {
+            const list = document.getElementById('resultsList');
+            if (!jobs || jobs.length === 0) {
+                list.innerHTML = '<div class="history-empty">No results found.</div>';
+                return;
+            }
+            list.innerHTML = jobs.map(job => {
+                const date = new Date(job.timestamp).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+                const range = job.usn_list.length > 1 ? `${job.usn_list[0]} - ${job.usn_list[job.usn_list.length-1]}` : job.usn_list[0];
+                return `
+                    <div class="history-hub-item">
+                        <div class="history-item-content">
+                            <span class="history-item-title">${range}</span>
+                            <div class="history-item-meta">
+                                <span>📅 ${date}</span>
+                                <span>👥 ${job.student_count} Students</span>
+                            </div>
+                        </div>
+                        <div class="history-item-actions">
+                            <button class="btn-icon-sm" onclick="openResultsPreview('${job.job_id}')" title="Preview Results">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            </button>
+                            <a href="/download_history/${job.job_id}" class="btn-icon-sm" title="Download Excel">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            </a>
+                            <button class="btn-icon-sm" onclick="deleteHistory('analysis', '${job.job_id}')" title="Delete record" style="color:var(--error)">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderTimetables(cycles) {
+            const list = document.getElementById('timetableList');
+            if (!cycles || cycles.length === 0) {
+                list.innerHTML = '<div class="history-empty">No generated timetables found.</div>';
+                return;
+            }
+            list.innerHTML = cycles.map(cycle => {
+                const date = new Date(cycle.timestamp).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+                return `
+                    <div class="history-hub-item">
+                        <div class="history-item-content">
+                            <span class="history-item-title">${cycle.cycle_type.toUpperCase()} Cycle Timetable</span>
+                            <div class="history-item-meta">
+                                <span>📅 ${date}</span>
+                                <span>System Generated</span>
+                            </div>
+                        </div>
+                        <div class="history-item-actions">
+                            <button class="btn-icon-sm" onclick="window.location.href='/timetable?modify=${cycle._id}'" title="Modify Timetable">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            </button>
+                            <a href="/api/download_historical_timetable/${cycle._id}" class="btn-icon-sm" title="Download Excel">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            </a>
+                            <button class="btn-icon-sm" onclick="deleteHistory('timetable', '${cycle._id}')" title="Delete record" style="color:var(--error)">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function deleteHistory(type, id) {
+            if (!confirm(`Are you sure you want to permanently delete this ${type} record? This action cannot be undone.`)) {
+                return;
+            }
+            
+            try {
+                const endpoint = type === 'analysis' ? `/api/history/delete_analysis/${id}` : `/api/history/delete_timetable/${id}`;
+                const res = await fetch(endpoint, { method: 'DELETE' });
+                const data = await res.json();
+                
+                if (data.success) {
+                    loadAllHistory(); 
+                } else {
+                    alert("Failed to delete record.");
+                }
+            } catch (e) {
+                console.error("Delete history error:", e);
+                alert("An error occurred during deletion.");
+            }
+        }
+
+        function toggleTheme() {
+            document.body.classList.toggle('light-mode');
+            localStorage.setItem('theme', document.body.classList.contains('light-mode') ? 'light' : 'dark');
+        }
+        if(localStorage.getItem('theme') === 'light') document.body.classList.add('light-mode');
+    </script>
+</body>
+</html>

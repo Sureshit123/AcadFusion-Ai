@@ -5,6 +5,7 @@ import re
 from flask import Blueprint, render_template, request, jsonify, send_file, session, redirect, url_for
 from scraper import initialize_scrape, complete_scrape
 from processor import generate_excel_report
+from models.database import db_instance
 import time
 
 analyzer_bp = Blueprint('analyzer', __name__)
@@ -12,7 +13,7 @@ analyzer_bp = Blueprint('analyzer', __name__)
 # JOBS store - in production this would be Redis/DB
 JOBS = {}
 
-def background_scraper(job_id, usn_list):
+def background_scraper(job_id, usn_list, user_id, is_mock=None):
     JOBS[job_id].update({
         'total': len(usn_list),
         'completed': 0,
@@ -26,7 +27,7 @@ def background_scraper(job_id, usn_list):
         
         while True:
             JOBS[job_id]['status'] = f'Initializing {usn}...'
-            req_session, b64_captcha, token_dict, err = initialize_scrape(usn)
+            req_session, b64_captcha, token_dict, err = initialize_scrape(usn, mock=is_mock)
             
             if err or not req_session or not b64_captcha:
                 JOBS[job_id]['results'].append({"usn": usn, "status": f"Init Error: {err}"})
@@ -37,7 +38,15 @@ def background_scraper(job_id, usn_list):
             JOBS[job_id]['current_session'] = req_session
             JOBS[job_id]['token_dict'] = token_dict
             JOBS[job_id]['captcha_solved'] = False
-            JOBS[job_id]['status'] = 'Waiting for Captcha'
+            
+            # Simulation Mode: Auto-solve captcha
+            from scraper import VTU_MOCK_MODE
+            effective_mock = is_mock if is_mock is not None else VTU_MOCK_MODE
+            if effective_mock:
+                JOBS[job_id]['captcha_solved'] = True
+                JOBS[job_id]['captcha_text'] = 'SIM'
+            else:
+                JOBS[job_id]['status'] = 'Waiting for Captcha'
             
             timeout_loops = 0
             while not JOBS[job_id]['captcha_solved']:
@@ -51,7 +60,7 @@ def background_scraper(job_id, usn_list):
                  break
                  
             JOBS[job_id]['status'] = f'Scraping {usn}...'
-            res_dict = complete_scrape(usn, req_session, token_dict, JOBS[job_id]['captcha_text'])
+            res_dict = complete_scrape(usn, req_session, token_dict, JOBS[job_id]['captcha_text'], mock=is_mock)
             
             if res_dict.get('status') == 'Invalid Captcha':
                 JOBS[job_id]['status'] = 'Invalid Captcha. Retrying student...'
@@ -70,6 +79,10 @@ def background_scraper(job_id, usn_list):
         excel_data = generate_excel_report(JOBS[job_id]['results'])
         JOBS[job_id]['excel_file'] = excel_data
         JOBS[job_id]['status'] = 'Completed'
+        
+        # Save to MongoDB for persistence
+        db_instance.save_analysis_job(job_id, usn_list, JOBS[job_id]['results'], user_id)
+        
     except Exception as e:
         JOBS[job_id]['status'] = f'Error during Excel generation: {str(e)}'
 
@@ -87,7 +100,13 @@ def expand_usn_range(start_usn, count):
 def dashboard():
     if 'user_id' not in session:
         return redirect(url_for('auth.login'))
-    return render_template('analyzer/dashboard.html')
+    
+    # Pass config to check for Simulation Mode in UI
+    from scraper import VTU_MOCK_MODE
+    current_mode = session.get('use_mock')
+    if current_mode is None: current_mode = VTU_MOCK_MODE
+    
+    return render_template('analyzer/dashboard.html', config={'VTU_MOCK_MODE': current_mode})
 
 @analyzer_bp.route('/api/start_analysis', methods=['POST'])
 def start_analysis():
@@ -121,8 +140,9 @@ def start_analysis():
             
     if not usn_list: return jsonify({'error': 'No input provided'}), 400
 
+    is_mock = session.get('use_mock')
     JOBS[job_id] = {'excel_file': None, 'captcha_solved': True} 
-    thread = threading.Thread(target=background_scraper, args=(job_id, usn_list))
+    thread = threading.Thread(target=background_scraper, args=(job_id, usn_list, session.get('user_id'), is_mock))
     thread.daemon = True
     thread.start()
     return jsonify({'job_id': job_id})
@@ -160,3 +180,60 @@ def download(job_id):
         download_name=f'VTU_Results_{job_id[:8]}.xlsx',
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
+
+@analyzer_bp.route('/api/history')
+def get_history():
+    if 'user_id' not in session: return jsonify({'error': 'Unauthorized'}), 401
+    history = db_instance.get_user_analysis_history(session['user_id'])
+    return jsonify(history)
+
+@analyzer_bp.route('/download_history/<job_id>')
+def download_history(job_id):
+    if 'user_id' not in session: return redirect(url_for('auth.login'))
+    
+    # Check JOBS cache first
+    job = JOBS.get(job_id)
+    if job and job.get('excel_file'):
+        return send_file(
+            job['excel_file'],
+            as_attachment=True,
+            download_name=f'VTU_Results_{job_id[:8]}.xlsx',
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    
+    # Fallback to Database
+    db_job = db_instance.get_analysis_job_results(job_id)
+    if not db_job: return "Job Not Found", 404
+    
+    try:
+        excel_data = generate_excel_report(db_job['results'])
+        return send_file(
+            excel_data,
+            as_attachment=True,
+            download_name=f'VTU_Results_{job_id[:8]}.xlsx',
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    except Exception as e:
+        return f"Error regenerating report: {str(e)}", 500
+
+@analyzer_bp.route('/api/toggle_mock', methods=['POST'])
+def toggle_mock():
+    if 'user_id' not in session: return jsonify({'error': 'Unauthorized'}), 401
+    use_mock = request.json.get('use_mock')
+    session['use_mock'] = use_mock
+    return jsonify({'success': True, 'current_mode': 'Simulation' if use_mock else 'Live'})
+
+@analyzer_bp.route('/api/job_results/<job_id>')
+def get_job_results(job_id):
+    if 'user_id' not in session: return jsonify({'error': 'Unauthorized'}), 401
+    
+    # Check cache first
+    job = JOBS.get(job_id)
+    if job and job.get('results'):
+        return jsonify(job['results'])
+    
+    # Fallback to DB
+    db_job = db_instance.get_analysis_job_results(job_id)
+    if db_job: return jsonify(db_job['results'])
+    
+    return jsonify({'error': 'Job results not found'}), 404

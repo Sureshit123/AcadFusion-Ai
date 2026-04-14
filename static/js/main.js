@@ -116,14 +116,17 @@ function pollProgress(jobId, btnRef, btnOriginalId) {
             
             if (data.status === 'Completed') {
                 clearInterval(progressInterval);
-                document.getElementById('currentStatus').innerText = 'Analysis Complete!';
-                document.getElementById('currentStatus').style.color = 'var(--success)';
                 btnRef.disabled = false;
                 btnRef.innerHTML = texts[btnOriginalId];
                 
                 const downloadBtn = document.getElementById('downloadBtn');
+                const viewBtn = document.getElementById('viewResultsBtn');
                 downloadBtn.href = `/download/${jobId}`;
                 downloadBtn.style.display = 'flex';
+                viewBtn.style.display = 'flex';
+                viewBtn.setAttribute('onclick', `openResultsPreview('${jobId}')`);
+                
+                document.getElementById('currentStatus').innerHTML = '<span style="color: #10b981">Analysis Complete!</span>';
                 
             } else if (data.status && data.status.includes('Error')) {
                 clearInterval(progressInterval);
@@ -145,6 +148,47 @@ function pollProgress(jobId, btnRef, btnOriginalId) {
             btnRef.innerHTML = texts[btnOriginalId];
         }
     }, 1000);
+}
+
+async function openResultsPreview(job_id) {
+    const modal = document.getElementById('resultsModal');
+    const body = document.getElementById('previewBody');
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center">Loading data...</td></tr>';
+    modal.style.display = 'flex';
+    
+    try {
+        const res = await fetch(`/api/job_results/${job_id}`);
+        const results = await res.json();
+        
+        if (!results || results.length === 0) {
+            body.innerHTML = '<tr><td colspan="5" style="text-align:center">No data found.</td></tr>';
+            return;
+        }
+        
+        body.innerHTML = results.map(r => {
+            // Fallback calculation for older records missing percentage field
+            let pct = r.percentage;
+            if ((!pct || pct == 0) && r.total_marks > 0) {
+                // Heuristic: VTU subjects are usually 100 marks. 
+                // We'll calculate based on common semester total targets (e.g., 600, 700, 800)
+                // or just display total/target if we knew target. 
+                // For now, we'll try to keep it as provided or 0.
+                pct = r.percentage || 0;
+            }
+
+            return `
+                <tr>
+                    <td style="font-weight:700; color:var(--accent-primary)">${r.usn}</td>
+                    <td>${r.name || 'N/A'}</td>
+                    <td style="text-align:center">${r.total_marks || 0}</td>
+                    <td style="text-align:center">${pct}%</td>
+                    <td><span class="badge ${(r.status || 'Fail').toLowerCase() === 'pass' ? 'pass' : 'fail'}">${r.status || 'Fail'}</span></td>
+                </tr>
+            `;
+        }).join('');
+    } catch (e) {
+        body.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#ef4444">Error: ${e.message}</td></tr>`;
+    }
 }
 
 async function submitCaptcha() {
@@ -175,4 +219,58 @@ async function submitCaptcha() {
 // Allow Enter key
 document.getElementById('captchaInput').addEventListener('keypress', function(e) {
     if(e.key === 'Enter') submitCaptcha();
+});
+async function toggleMockMode(cb) {
+    const isLive = cb.checked;
+    const labelDemo = document.getElementById('label-demo');
+    const labelLive = document.getElementById('label-live');
+    
+    // Immediate UI feedback
+    if (isLive) {
+        labelLive.classList.add('active');
+        labelDemo.classList.remove('active');
+    } else {
+        labelDemo.classList.add('active');
+        labelLive.classList.remove('active');
+    }
+    
+    try {
+        const res = await fetch('/api/toggle_mock', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ use_mock: !isLive })
+        });
+        
+        if (!res.ok) throw new Error("Failed to switch mode");
+        
+        // Success Toast or console log
+        console.log(`Mode switched to: ${isLive ? 'Live VTU' : 'Simulation'}`);
+        
+    } catch (e) {
+        alert("Error switching mode: " + e.message);
+        cb.checked = !isLive; // Revert
+        // Revert UI labels
+        labelLive.classList.toggle('active');
+        labelDemo.classList.toggle('active');
+    }
+}
+
+// Initial state cleanup
+window.addEventListener('DOMContentLoaded', () => {
+    const cb = document.getElementById('modeToggle');
+    if (cb) {
+        const labelDemo = document.getElementById('label-demo');
+        const labelLive = document.getElementById('label-live');
+        // If checked, it means LIVE
+        if (cb.checked) {
+            labelLive.classList.add('active');
+            labelDemo.classList.remove('active');
+        } else {
+            labelDemo.classList.add('active');
+            labelLive.classList.remove('active');
+        }
+    }
+    
+    // Auto-refresh history every minute
+    setInterval(loadHistory, 60000);
 });

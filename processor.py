@@ -1,8 +1,33 @@
 import pandas as pd
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.chart import BarChart, Reference
 import io
 import json
+
+def classify_grade(total, internal=0, external=0):
+    """Categorizes marks into grades."""
+    try:
+        total = int(total)
+        internal = int(internal)
+        external = int(external)
+    except:
+        return "Fail"
+        
+    # Rule: 50 < internal <= 100 is always PASS
+    if 50 < internal <= 100:
+        pass
+    # Rule: internal <= 50 and external < 18 is FAIL
+    elif internal <= 50 and external < 18:
+        return "Fail"
+    
+    if total >= 91: return "Outstanding / Excellent"
+    if total >= 81: return "Very Good"
+    if total >= 71: return "Good"
+    if total >= 61: return "Above Average"
+    if total >= 51: return "Average"
+    if total >= 41: return "Pass"
+    return "Fail"
 
 def generate_excel_report(results):
     """
@@ -20,12 +45,15 @@ def generate_excel_report(results):
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         # Sheet 1: All Students
         if results:
-            # 1. Collect all unique subject codes from valid results to ensure uniformity
-            all_subject_codes = set()
+            # 1. Collect all unique subject codes/names from valid results
+            all_subjects_meta = {} # code -> name
             for r in results:
                 if r.get('status') in ['Pass', 'Fail']:
-                    all_subject_codes.update(r.get('subjects', {}).keys())
-            all_subject_codes = sorted(list(all_subject_codes))
+                    for sub_code, sub_data in r.get('subjects', {}).items():
+                        if sub_code not in all_subjects_meta or not all_subjects_meta[sub_code]:
+                            all_subjects_meta[sub_code] = sub_data.get('name', '')
+            
+            all_subject_codes = sorted(list(all_subjects_meta.keys()))
             
             df_all = []
             for i, r in enumerate(results):
@@ -88,7 +116,9 @@ def generate_excel_report(results):
             # Dynamic Subject Headers
             current_col = 4
             for sub_code in all_subject_codes:
-                worksheet.cell(row=1, column=current_col, value=sub_code)
+                sub_name = all_subjects_meta.get(sub_code, "")
+                header_text = f"{sub_code} - {sub_name}" if sub_name else sub_code
+                worksheet.cell(row=1, column=current_col, value=header_text)
                 worksheet.merge_cells(start_row=1, start_column=current_col, end_row=1, end_column=current_col + 3)
                 
                 # Rewrite the 2nd row headers gracefully
@@ -135,7 +165,89 @@ def generate_excel_report(results):
         else:
             pd.DataFrame(columns=['USN', 'Message']).to_excel(writer, sheet_name='All Students', index=False)
 
-        # Sheet 2: Top 5 Toppers (Based on Total Marks)
+        # Sheet 2: Subject-wise Pass % (MOVED TO 2nd)
+        if valid_results:
+            subject_stats = {}
+            grade_ranges = [
+                "Outstanding / Excellent", "Very Good", "Good", 
+                "Above Average", "Average"
+            ]
+            
+            for r in valid_results:
+                for sub_code, sub_data in r.get('subjects', {}).items():
+                    if sub_code not in subject_stats:
+                        subject_stats[sub_code] = {
+                            'Name': sub_data.get('name', ''),
+                            'Appeared': 0, 
+                            'Passed': 0,
+                            'Outstanding / Excellent': 0,
+                            'Very Good': 0,
+                            'Good': 0,
+                            'Above Average': 0,
+                            'Average': 0,
+                            'Pass': 0,
+                            'Fail': 0
+                        }
+                    
+                    subject_stats[sub_code]['Appeared'] += 1
+                    res_flag = sub_data.get('result', '').upper()
+                    if res_flag in ['P', 'PASS']:
+                        subject_stats[sub_code]['Passed'] += 1
+                    
+                    # Grade breakdown
+                    grade = classify_grade(sub_data.get('total', 0), sub_data.get('internal', 0), sub_data.get('external', 0))
+                    if grade in subject_stats[sub_code]:
+                        subject_stats[sub_code][grade] += 1
+            
+            pass_percents = []
+            for sub_code, stats in subject_stats.items():
+                p_percent = round((stats['Passed'] / stats['Appeared']) * 100, 2) if stats['Appeared'] > 0 else 0
+                row = {
+                    'Subject Code': sub_code,
+                    'Subject Name': stats['Name'],
+                    'Appeared': stats['Appeared'],
+                    'Passed': stats['Passed'],
+                }
+                # Add grade columns
+                for gr in grade_ranges:
+                    row[gr] = stats[gr]
+                
+                # Move Pass Percentage to the end
+                row['Pass Percentage'] = p_percent
+                pass_percents.append(row)
+            
+            df_subs = pd.DataFrame(pass_percents)
+            if not df_subs.empty:
+                # Sort by Passed students in decreasing order
+                df_subs = df_subs.sort_values(by='Passed', ascending=False)
+                df_subs.to_excel(writer, sheet_name='Subject-wise Pass %', index=False)
+                
+                # Create Visualization
+                ws = writer.sheets['Subject-wise Pass %']
+                chart = BarChart()
+                chart.type = "col"
+                chart.style = 10
+                chart.title = "Appeared vs Passed Students per Subject"
+                chart.y_axis.title = 'Total Students'
+                chart.x_axis.title = 'Subject Code'
+                
+                # Reference data: Appeared (3) and Passed (4) columns
+                data = Reference(ws, min_col=3, min_row=1, max_row=len(df_subs)+1, max_col=4)
+                # Reference categories: Subject Code column (1st column)
+                cats = Reference(ws, min_col=1, min_row=2, max_row=len(df_subs)+1)
+                
+                chart.add_data(data, titles_from_data=True)
+                chart.set_categories(cats)
+                # Keep legend enabled to distinguish between Appeared and Passed
+                
+                # Add chart to the sheet (Column O)
+                ws.add_chart(chart, "O2")
+            else:
+                pd.DataFrame(columns=['Subject Code']).to_excel(writer, sheet_name='Subject-wise Pass %', index=False)
+        else:
+             pd.DataFrame(columns=['Subject Code']).to_excel(writer, sheet_name='Subject-wise Pass %', index=False)
+
+        # Sheet 3: Top 5 Toppers (MOVED TO 3rd)
         if valid_results:
             try:
                 # We need to compute total marks and percentage natively here since they aren't uniquely extracted dynamically
@@ -154,36 +266,6 @@ def generate_excel_report(results):
                 pd.DataFrame([{'Error': str(e)}]).to_excel(writer, sheet_name='Top 5 Toppers', index=False)
         else:
             pd.DataFrame(columns=['USN', 'Name']).to_excel(writer, sheet_name='Top 5 Toppers', index=False)
-
-        # Sheet 3: Subject-wise Pass %
-        if valid_results:
-            subject_stats = {}
-            for r in valid_results:
-                for sub_code, sub_data in r.get('subjects', {}).items():
-                    if sub_code not in subject_stats:
-                        subject_stats[sub_code] = {'Appeared': 0, 'Passed': 0}
-                    
-                    subject_stats[sub_code]['Appeared'] += 1
-                    if sub_data.get('result', '').upper() in ['P', 'PASS']:
-                        subject_stats[sub_code]['Passed'] += 1
-            
-            pass_percents = []
-            for sub_code, stats in subject_stats.items():
-                p_percent = round((stats['Passed'] / stats['Appeared']) * 100, 2) if stats['Appeared'] > 0 else 0
-                pass_percents.append({
-                    'Subject Code': sub_code,
-                    'Appeared': stats['Appeared'],
-                    'Passed': stats['Passed'],
-                    'Pass Percentage': p_percent
-                })
-            
-            df_subs = pd.DataFrame(pass_percents)
-            if not df_subs.empty:
-                df_subs.to_excel(writer, sheet_name='Subject-wise Pass %', index=False)
-            else:
-                pd.DataFrame(columns=['Subject Code']).to_excel(writer, sheet_name='Subject-wise Pass %', index=False)
-        else:
-             pd.DataFrame(columns=['Subject Code']).to_excel(writer, sheet_name='Subject-wise Pass %', index=False)
 
         # Sheet 4: Failed / Skipped Students (Replaced purely with Backlog summary)
         if valid_results:

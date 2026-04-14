@@ -15,8 +15,11 @@ AcadFusion AI is a comprehensive academic management suite designed to streamlin
 
 ### 2. Departmental Timetable Generator
 - **Smart Scheduling**: Generates conflict-free timetables for multiple semesters simultaneously.
+- **Modification Workflow**: Re-hydrate past timetables from the History Hub to tweak and regenerate without starting over.
+- **Pedagogical Constraints**: Strictly enforces a "one class per subject per day" rule for better academic distribution.
 - **Resource Management**: Tracks teacher availability and physical lab room constraints to prevent double-booking.
-- **Constraint-Aware**: Automatically handles Saturday variations, session breaks (Recess/Lunch), and parallel batch lab sessions (e.g., B1 and B2 in different labs).
+- **Constraint-Aware**: Automatically handles Saturday variations, session breaks, and parallel batch lab sessions.
+- **Holiday Reasons**: Add custom justifications for Saturday holidays, displayed in bold on the grid.
 - **Export to Excel**: One-click generation of professional timetable spreadsheets.
 
 ### 3. Secure Admin Panel
@@ -79,11 +82,12 @@ AcadFusion AI is a comprehensive academic management suite designed to streamlin
 Designed to be easily deployed on **Render**, **Railway**, or **Vercel**.
 
 ### Render.com Guide
-1. Connect your GitHub repository.
+1. Connect project GitHub repository.
 2. Select **Web Service**.
-3. Build Command: `pip install -r requirements.txt`
-4. Start Command: `gunicorn app:app`
-5. Add environment variables from your `.env` file.
+3. **Environment**: Python 3.
+4. **Build Command**: `pip install -r requirements.txt`
+5. **Start Command**: `gunicorn app:app` (The project includes a `Procfile` for auto-detection).
+6. **Config**: Add your `.env` variables (e.g., `MONGO_URI`) in the Dashboard.
 
 ---
 

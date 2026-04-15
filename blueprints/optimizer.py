@@ -116,6 +116,9 @@ class GreedyOptimizer:
         labs = [i for i in items_to_place if i['type'] == 'lab']
         for lab in labs:
             placed = False
+            # Labs take 2 slots, avoid spanning recess/lunch
+            # Valid start slots: 0 (9-11), 2 (11:15-1:15), 4 (2:15-4:15), 5 (3:15-5:15)
+            # Prioritize earlier starts
             p_starts = [0, 2, 4, 5]
             days = list(range(6))
             random.shuffle(days)
@@ -123,7 +126,11 @@ class GreedyOptimizer:
             for d in days:
                 for s in p_starts:
                     if optimized_grids[lab['sem']][d][s] is None and optimized_grids[lab['sem']][d][s+1] is None:
-                        # Inline check
+                        # Check subject repetition
+                        if self._already_has_subject(optimized_grids[lab['sem']][d], lab['name']):
+                            continue
+
+                        # Check resources
                         free = True
                         for t in t_all:
                             if t in teacher_usage[d][s] or t in teacher_usage[d][s+1]: free = False; break
@@ -147,10 +154,15 @@ class GreedyOptimizer:
         subs = [i for i in items_to_place if i['type'] == 'subject']
         for sub in subs:
             placed = False
+            # Prioritize filling slots from earliest (0) to latest
             for s in range(len(SLOTS)):
                 days = list(range(6)); random.shuffle(days)
                 for d in days:
                     if optimized_grids[sub['sem']][d][s] is None:
+                        # Check subject repetition
+                        if self._already_has_subject(optimized_grids[sub['sem']][d], sub['name']):
+                            continue
+                            
                         t_sub = [sub['teacher']] if sub.get('teacher') else []
                         free = True
                         for t in t_sub:
@@ -164,7 +176,43 @@ class GreedyOptimizer:
                 if placed: break
             if not placed: unplaced_items.append(sub)
 
+        # POST-PROCESSING: Fill Gaps and Ensure Earliest Start
+        optimized_grids = self._refine_and_fill(optimized_grids)
+
         return optimized_grids, unplaced_items
+
+    def _already_has_subject(self, day_slots, sub_name):
+        if not sub_name: return False
+        sub_clean = sub_name.split(' ')[0].upper()
+        for slot in day_slots:
+            if slot and isinstance(slot, dict):
+                ext_name = slot.get('name', '').split(' ')[0].upper()
+                if ext_name == sub_clean:
+                    return True
+        return False
+
+    def _refine_and_fill(self, grids):
+        for sem, grid in grids.items():
+            for d in range(6):
+                day_slots = grid[d]
+                # Find start and end of classes for this day
+                occupied_indices = [i for i, slot in enumerate(day_slots) if slot is not None]
+                if not occupied_indices: continue
+                
+                # Check for idle gaps between classes
+                first = min(occupied_indices)
+                last = max(occupied_indices)
+                
+                for i in range(first, last + 1):
+                    if day_slots[i] is None:
+                        # This is a gap > 15 mins (since each slot is ~1hr)
+                        day_slots[i] = {
+                            "type": "productive",
+                            "name": "Study / Revision / Lab Prep",
+                            "teacher": "Self",
+                            "room": "Library / Study Hall"
+                        }
+        return grids
 
     def _is_free(self, teachers, needs_parallel, day, slot, sem, sub_name=None):
         if day == 5 and slot > 3: return False

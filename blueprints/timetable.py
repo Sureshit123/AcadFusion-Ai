@@ -184,9 +184,9 @@ class DepartmentCycleGenerator:
                 teacher = sub['teacher']
                 for _ in range(credits):
                     placed = False
-                    # Shuffle slots to avoid always filling morning first
+                    # Prioritize earlier slots to keep timetable compact
                     slot_indices = list(range(len(SLOTS)))
-                    random.shuffle(slot_indices)
+                    # DO NOT shuffle slot_indices to ensure we try to fill from the morning first
                     
                     for s in slot_indices:
                         days_list = list(range(num_days))
@@ -202,6 +202,23 @@ class DepartmentCycleGenerator:
                                 placed = True; break
                         if placed: break
                     if not placed: return None, f"Could not place subject {sub['name']} (Sem {sem}) - Try increasing slots or allowing Saturday classes."
+
+        # POST-PROCESSING: Fill Idle Gaps with Productive Activities
+        for sem in self.semesters_data:
+            for d in range(6):
+                day_slots = self.grids[sem][d]
+                occupied = [i for i, slot in enumerate(day_slots) if slot is not None]
+                if not occupied: continue
+                
+                first, last = min(occupied), max(occupied)
+                for i in range(first, last + 1):
+                    if day_slots[i] is None:
+                        day_slots[i] = {
+                            "type": "productive",
+                            "name": "Study / Revision / Lab Prep",
+                            "teacher": "Self",
+                            "room": "Library / Study Hall"
+                        }
 
         # Add holiday reason to the grid metadata if applicable
         for sem, data in self.semesters_data.items():

@@ -6,21 +6,19 @@ AcadFusion AI is a comprehensive academic management suite designed to streamlin
 
 ### 1. VTU Result Analyzer
 - **Automated Scraping**: Fetch results for multiple USNs via sequential auto-generation or bulk file upload.
+- **Session Persistence**: Optimized engine that reuses connections to minimize captcha prompts and improve stability. 
 - **Intelligent Processing**: Automatically extracts student data, SGPA, grades, and subject details.
-- **Comprehensive Analytics**: Generates a multi-sheet Excel report including:
-  - **All Results**: Raw data for every student.
-  - **Toppers**: Ranked list of top performers.
-  - **Analytics**: Pass/Fail percentages and subject-wise performance.
+- **Official ISE Department Reporting**: Generates a professional multi-sheet Excel report including:
+  - **Overall Result Summary**: High-level class performance with signature footers.
+  - **Subject-wise Analysis**: Detailed per-subject grading with a "Subject wise %" graphical dashboard.
+  - **All Students List**: Advanced multi-level headers with automatic **backlog highlighting** (Bright Yellow) for instant identification.
 - **Mock Mode**: Built-in simulator for testing without hitting live VTU servers.
 
 ### 2. Departmental Timetable Generator
+- **High-Performance Engine**: Optimized with a pre-fetching cache to generate complex schedules ~90% faster.
 - **Smart Scheduling**: Generates conflict-free timetables for multiple semesters simultaneously.
-- **Modification Workflow**: Re-hydrate past timetables from the History Hub to tweak and regenerate without starting over.
-- **Pedagogical Constraints**: Strictly enforces a "one class per subject per day" rule for better academic distribution.
-- **Resource Management**: Tracks teacher availability and physical lab room constraints to prevent double-booking.
-- **Constraint-Aware**: Automatically handles Saturday variations, session breaks, and parallel batch lab sessions.
-- **Holiday Reasons**: Add custom justifications for Saturday holidays, displayed in bold on the grid.
-- **Export to Excel**: One-click generation of professional timetable spreadsheets.
+- **Resource Management**: Strictly enforces a "one class per subject per day" rule and prevents teacher/lab double-booking.
+- **Export to Excel**: One-click generation of professional timetable spreadsheets with individual semester sheets.
 
 ### 3. Secure Admin Panel
 - **Authentication**: Secure login system for authorized department personnel.

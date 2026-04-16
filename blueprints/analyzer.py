@@ -3,7 +3,8 @@ import threading
 import uuid
 import re
 from flask import Blueprint, render_template, request, jsonify, send_file, session, redirect, url_for
-from scraper import initialize_scrape, complete_scrape
+import requests
+from scraper import initialize_scrape, complete_scrape, get_headers
 from processor import generate_excel_report
 from models.database import db_instance
 import time
@@ -22,12 +23,17 @@ def background_scraper(job_id, usn_list, user_id, is_mock=None):
         'current_usn': ''
     })
     
+    # Persistent Session for the entire job
+    job_session = requests.Session()
+    job_session.verify = False
+    job_session.headers.update(get_headers())
+    
     for usn in usn_list:
         JOBS[job_id]['current_usn'] = usn
         
         while True:
             JOBS[job_id]['status'] = f'Initializing {usn}...'
-            req_session, b64_captcha, token_dict, err = initialize_scrape(usn, mock=is_mock)
+            req_session, b64_captcha, token_dict, err = initialize_scrape(usn, mock=is_mock, session=job_session)
             
             if err or not req_session or not b64_captcha:
                 JOBS[job_id]['results'].append({"usn": usn, "status": f"Init Error: {err}"})
@@ -67,6 +73,12 @@ def background_scraper(job_id, usn_list, user_id, is_mock=None):
                 JOBS[job_id]['captcha_solved'] = False
                 time.sleep(1)
                 continue # Retry SAME USN
+                
+            if res_dict.get('status') == 'Busy/Redirect':
+                JOBS[job_id]['status'] = 'VTU Busy. Retrying student...'
+                JOBS[job_id]['captcha_solved'] = False
+                time.sleep(3) # Wait longer for redirect/busy
+                continue
                 
             JOBS[job_id]['results'].append(res_dict)
             JOBS[job_id]['completed'] += 1

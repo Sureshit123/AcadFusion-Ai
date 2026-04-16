@@ -653,6 +653,15 @@
                 updateP(85, "Validating Conflicts...");
                 await new Promise(r => setTimeout(r, 700));
 
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error("Server Error Response:", errorText);
+                    if (response.status === 504 || response.status === 502) {
+                        throw new Error("Server Timeout: The generation took too long. Try reducing some constraints or checking the teacher availability.");
+                    }
+                    throw new Error(`Server Error (${response.status}): ${response.statusText}`);
+                }
+
                 const data = await response.json();
                 
                 updateP(100, "Finalizing Grid...");
@@ -660,7 +669,7 @@
 
                 if(data.error) {
                     overlay.classList.remove('active');
-                    return alert("Generation failed: " + data.error);
+                    return alert("Generation Logic Error: " + data.error);
                 }
 
                 currentGrids = data.grids;

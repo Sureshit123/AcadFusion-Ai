@@ -12,10 +12,11 @@ DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 SLOTS = ["09:00-10:00", "10:00-11:00", "11:15-12:15", "12:15-01:15", "02:15-03:15", "03:15-04:15", "04:15-05:15"]
 
 class DepartmentCycleGenerator:
-    def __init__(self, cycle_type, semesters_data, max_physical_labs):
+    def __init__(self, cycle_type, semesters_data, max_physical_labs, schedules_cache=None):
         self.cycle_type = cycle_type # 'odd' or 'even'
         self.semesters_data = semesters_data # { '3': {subjects, labs, fixed, sat_holiday}, ... }
         self.max_physical_labs = max_physical_labs
+        self.schedules_cache = schedules_cache or {}
         self.grids = {sem: [[None for _ in range(len(SLOTS))] for _ in range(6)] for sem in semesters_data}
         
         # Shared pool tracking [day][slot]
@@ -35,7 +36,7 @@ class DepartmentCycleGenerator:
             if not t: continue
             if t in self.global_teacher_usage[day][slot_idx]:
                 return False
-            global_busy = db_instance.get_teacher_schedule(t)
+            global_busy = self.schedules_cache.get(t, [])
             for busy in global_busy:
                 if busy['day'] == day and busy['slot'] == slot_idx:
                     return False
@@ -238,12 +239,24 @@ def generate_cycle():
     cycle_type = data.get('cycle_type')
     semesters_data = data.get('semesters', {})
     max_labs = int(data.get('max_labs', 3))
-    teacher_pool = data.get('teacher_pool', []) # Passed from frontend
+    # Extract teacher pool from input data
+    teacher_pool = set()
+    for sem_id, sem_val in semesters_data.items():
+        for sub in sem_val.get('subjects', []):
+            if sub.get('teacher'): teacher_pool.add(sub['teacher'])
+        for lab in sem_val.get('labs', []):
+            for t in lab.get('teachers', []):
+                if t: teacher_pool.add(t)
+                
+    # Pre-fetch all teacher schedules to avoid thousands of DB calls during generation
+    schedules_cache = {}
+    for t in teacher_pool:
+        schedules_cache[t] = db_instance.get_teacher_schedule(t)
     
     # Save teacher pool to config for persistence (per user)
-    db_instance.update_department_resources(session['user_id'], max_labs, teacher_pool)
+    db_instance.update_department_resources(session['user_id'], max_labs, list(teacher_pool))
     
-    gen = DepartmentCycleGenerator(cycle_type, semesters_data, max_labs)
+    gen = DepartmentCycleGenerator(cycle_type, semesters_data, max_labs, schedules_cache)
     grids, err = gen.generate()
     
     if err: return jsonify({'error': err}), 400

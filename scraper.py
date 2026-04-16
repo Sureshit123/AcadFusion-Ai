@@ -53,7 +53,7 @@ def get_mock_result(usn):
         "subjects": subjects
     }
 
-def initialize_scrape(usn, retries=3, mock=None):
+def initialize_scrape(usn, retries=3, mock=None, session=None):
     """
     Step 1: Starts a session, fetches the index page, extracts the hidden token
     and captures the captcha image. Includes retries for VTU server instability.
@@ -63,12 +63,13 @@ def initialize_scrape(usn, retries=3, mock=None):
     if is_mock:
         # A valid 1x1 transparent PNG base64 string
         mock_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
-        return "MOCK_SESSION", mock_b64, {"name": "MockToken", "value": "123"}, None
+        return (session if session else "MOCK_SESSION"), mock_b64, {"name": "MockToken", "value": "123"}, None
 
     import time
-    session = requests.Session()
-    session.verify = False
-    session.headers.update(get_headers())
+    if session is None:
+        session = requests.Session()
+        session.verify = False
+        session.headers.update(get_headers())
     
     last_err = None
     for attempt in range(retries):
@@ -138,8 +139,11 @@ def complete_scrape(usn, session, token_dict, captcha_text, mock=None):
         res = session.post(VTU_RESULT, data=payload, timeout=15)
         
         # If captcha is wrong, VTU usually returns to index with an alert
-        if "Invalid captcha" in res.text or "Invalid Captch" in res.text or "Redirecting" in res.text:
+        if "Invalid captcha" in res.text or "Invalid Captch" in res.text:
              return {"usn": usn, "status": "Invalid Captcha"}
+             
+        if "Redirecting" in res.text:
+             return {"usn": usn, "status": "Busy/Redirect"}
              
         if "Invalid USN" in res.text or "not available" in res.text.lower():
              return {"usn": usn, "status": "Invalid/No Res"}

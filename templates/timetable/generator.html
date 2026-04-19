@@ -437,13 +437,15 @@
 
                     // Clear and Populate Subjects
                     const subList = panel.querySelector('.sub-list');
-                    subList.innerHTML = ''; // Clear defaults
-                    (data.subjects || []).forEach(sub => {
-                        const row = addSubjectRow(panel.querySelector('.section-header button')); // Pass the "Add" button
-                        row.querySelector('.sub-name').value = sub.name;
-                        row.querySelector('.sub-credits').value = sub.credits;
-                        row.querySelector('.sub-teacher').value = sub.teacher;
-                    });
+                    if (subList) {
+                        subList.innerHTML = ''; // Safe to clear now because addSubjectRow is robust
+                        (data.subjects || []).forEach(sub => {
+                            const row = addSubjectRow(panel.querySelector('.sub-list').previousElementSibling.querySelector('button'));
+                            row.querySelector('.sub-name').value = sub.name;
+                            row.querySelector('.sub-credits').value = sub.credits;
+                            row.querySelector('.sub-teacher').value = sub.teacher;
+                        });
+                    }
 
                     // Clear and Populate Labs (Check if lab-list exists)
                     const labList = panel.querySelector('.lab-list');
@@ -453,8 +455,8 @@
                             const row = addLabRow(labList.previousElementSibling.querySelector('button'));
                             row.querySelector('.lab-name').value = lab.name;
                             const selects = row.querySelectorAll('select');
-                            if (selects[0] && lab.teachers[0]) selects[0].value = lab.teachers[0];
-                            if (selects[1] && lab.teachers[1]) selects[1].value = lab.teachers[1];
+                            if (selects[0] && lab.teachers && lab.teachers[0]) selects[0].value = lab.teachers[0];
+                            if (selects[1] && lab.teachers && lab.teachers[1]) selects[1].value = lab.teachers[1];
                         });
                     }
 
@@ -566,7 +568,10 @@
 
         function addSubjectRow(btn) {
             const list = btn.parentElement.nextElementSibling;
-            const row = list.querySelector('.dynamic-row').cloneNode(true);
+            const existingRow = list.querySelector('.dynamic-row');
+            const row = existingRow ? existingRow.cloneNode(true) : 
+                document.getElementById('semPanelTemplate').content.querySelector('.sub-list .dynamic-row').cloneNode(true);
+            
             row.querySelector('.sub-name').value = '';
             row.querySelector('.sub-credits').value = '3';
             fillTeacherSelect(row.querySelector('select'));
@@ -576,7 +581,10 @@
 
         function addLabRow(btn) {
             const list = btn.parentElement.nextElementSibling;
-            const row = list.querySelector('.dynamic-row').cloneNode(true);
+            const existingRow = list.querySelector('.dynamic-row');
+            const row = existingRow ? existingRow.cloneNode(true) : 
+                document.getElementById('semPanelTemplate').content.querySelector('.lab-list .dynamic-row').cloneNode(true);
+                
             row.querySelector('.lab-name').value = '';
             row.querySelectorAll('select').forEach(fillTeacherSelect);
             list.appendChild(row);
@@ -585,7 +593,10 @@
 
         function addFixedRow(btn) {
             const container = btn.parentElement.nextElementSibling;
-            const row = container.querySelector('.dynamic-row').cloneNode(true);
+            const existingRow = container.querySelector('.dynamic-row');
+            const row = existingRow ? existingRow.cloneNode(true) : 
+                document.getElementById('semPanelTemplate').content.querySelector('.fixed-list-container .dynamic-row').cloneNode(true);
+                
             row.querySelector('.fixed-name').value = '';
             row.querySelector('.fixed-teacher').value = '';
             container.appendChild(row);

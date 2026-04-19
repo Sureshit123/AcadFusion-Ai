@@ -17,6 +17,8 @@ AcadFusion AI is a comprehensive academic management suite designed to streamlin
 ### 2. Departmental Timetable Generator
 - **High-Performance Engine**: Optimized with a pre-fetching cache to generate complex schedules ~90% faster.
 - **Smart Scheduling**: Generates conflict-free timetables for multiple semesters simultaneously.
+- **Teacher Resting Slots (New)**: Enforces a mandatory 1-hour "Resting Slot" (Empty or Fixed) between subject classes for faculty to prevent continuous teaching fatigue.
+- **Historical Modification**: Ability to load, modify, and regenerate previously saved timetables with one click.
 - **Resource Management**: Strictly enforces a "one class per subject per day" rule and prevents teacher/lab double-booking.
 - **Export to Excel**: One-click generation of professional timetable spreadsheets with individual semester sheets.
 

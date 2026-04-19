@@ -19,27 +19,66 @@ class DepartmentCycleGenerator:
         self.schedules_cache = schedules_cache or {}
         self.grids = {sem: [[None for _ in range(len(SLOTS))] for _ in range(6)] for sem in semesters_data}
         
-        # Shared pool tracking [day][slot]
-        self.global_teacher_usage = [[set() for _ in range(len(SLOTS))] for _ in range(6)]
+        # Shared pool tracking [day][slot] -> {teacher_name: activity_type}
+        self.global_teacher_usage = [[{} for _ in range(len(SLOTS))] for _ in range(6)]
         self.global_lab_usage = [[0 for _ in range(len(SLOTS))] for _ in range(6)]
         # Track batch usage [sem][day]
         self.batch_lab_usage = {sem: {"B1": set(), "B2": set()} for sem in semesters_data}
 
-    def is_resource_free(self, teachers, needs_lab, day, slot_idx, sem=None, batch=None):
+    def is_resource_free(self, teachers, activity_type, day, slot_idx, sem=None, batch=None):
+        needs_lab = (activity_type == 'lab')
         # 0. Check Saturday Constraint (College closes at 1:15 PM / Slot 3)
         if day == 5: # Saturday
             if slot_idx > 3: return False
             if needs_lab and (slot_idx + 1) > 3: return False
 
-        # 1. Check Teacher availability
+        # 1. Check Teacher availability and Gap constraints
         for t in teachers:
             if not t: continue
+            
+            # Basic Availability (Across all semesters in this cycle)
             if t in self.global_teacher_usage[day][slot_idx]:
                 return False
+            
+            # External Schedule Availability
             global_busy = self.schedules_cache.get(t, [])
             for busy in global_busy:
                 if busy['day'] == day and busy['slot'] == slot_idx:
                     return False
+
+            # NEW: Teacher Gap Constraint for Subject classes
+            if activity_type == 'subject':
+                # Check for other subjects on the same day
+                # A resting slot (Empty or Fixed) must exist between any two subject classes
+                
+                # Check backwards for previous subject
+                for s_prev in range(slot_idx - 1, -1, -1):
+                    prev_activity = self.global_teacher_usage[day][s_prev].get(t)
+                    if prev_activity == 'subject':
+                        # Found another subject class. Check for a gap between them.
+                        has_gap = False
+                        for s_bet in range(s_prev + 1, slot_idx):
+                            # Is slot s_bet a gap for this teacher?
+                            # A gap is either Empty (None or not in usage) or a Fixed slot.
+                            activity_bet = self.global_teacher_usage[day][s_bet].get(t)
+                            if activity_bet is None or activity_bet == 'fixed':
+                                has_gap = True
+                                break
+                        if not has_gap: return False
+                        break # Found nearest subject, gap check done
+                
+                # Check forwards for next subject
+                for s_next in range(slot_idx + 1, len(SLOTS)):
+                    next_activity = self.global_teacher_usage[day][s_next].get(t)
+                    if next_activity == 'subject':
+                        has_gap = False
+                        for s_bet in range(slot_idx + 1, s_next):
+                            activity_bet = self.global_teacher_usage[day][s_bet].get(t)
+                            if activity_bet is None or activity_bet == 'fixed':
+                                has_gap = True
+                                break
+                        if not has_gap: return False
+                        break
 
         # 2. Check Physical Lab Room
         if needs_lab:
@@ -51,9 +90,10 @@ class DepartmentCycleGenerator:
         
         return True
 
-    def mark_busy(self, teachers, used_lab, day, slot_idx, sem=None, batch=None):
+    def mark_busy(self, teachers, activity_type, day, slot_idx, sem=None, batch=None):
+        used_lab = (activity_type == 'lab')
         for t in teachers:
-            if t: self.global_teacher_usage[day][slot_idx].add(t)
+            if t: self.global_teacher_usage[day][slot_idx][t] = activity_type
         if used_lab:
             self.global_lab_usage[day][slot_idx] += 1
             if sem and batch:
@@ -70,7 +110,7 @@ class DepartmentCycleGenerator:
     def _attempt_generate(self):
         # Reset grids and usage trackers for each attempt
         self.grids = {sem: [[None for _ in range(len(SLOTS))] for _ in range(6)] for sem in self.semesters_data}
-        self.global_teacher_usage = [[set() for _ in range(len(SLOTS))] for _ in range(6)]
+        self.global_teacher_usage = [[{} for _ in range(len(SLOTS))] for _ in range(6)]
         self.global_lab_usage = [[0 for _ in range(len(SLOTS))] for _ in range(6)]
         self.batch_lab_usage = {sem: {"B1": set(), "B2": set()} for sem in self.semesters_data}
         # 1. Place Fixed Slots
@@ -80,6 +120,9 @@ class DepartmentCycleGenerator:
                 d = DAYS.index(fs['day'])
                 s = int(fs['slot_idx'])
                 self.grids[sem][d][s] = {"type": "fixed", "name": fs['name'], "teacher": fs.get('teacher', 'N/A')}
+                # Ensure fixed slots mark teacher as busy globally
+                if fs.get('teacher'):
+                    self.mark_busy([fs['teacher']], 'fixed', d, s)
 
         # 2. Place Labs (Semester-wise Pairing)
         # We group labs by semester to support parallel batching (React/ML at same time)
@@ -121,12 +164,12 @@ class DepartmentCycleGenerator:
                     t_b = lab_b.get('teachers', []) if lab_b else []
                     
                     # Check resources for BOTH labs in Session 1
-                    if not self.is_resource_free(t_a, True, d1, s1, sem, "B1") or \
-                       not self.is_resource_free(t_a, True, d1, s1+1, sem, "B1"): continue
+                    if not self.is_resource_free(t_a, 'lab', d1, s1, sem, "B1") or \
+                       not self.is_resource_free(t_a, 'lab', d1, s1+1, sem, "B1"): continue
                     
                     if lab_b:
-                        if not self.is_resource_free(t_b, True, d1, s1, sem, "B2") or \
-                           not self.is_resource_free(t_b, True, d1, s1+1, sem, "B2"): continue
+                        if not self.is_resource_free(t_b, 'lab', d1, s1, sem, "B2") or \
+                           not self.is_resource_free(t_b, 'lab', d1, s1+1, sem, "B2"): continue
                         # Check physical rooms (needs 2 rooms)
                         if self.global_lab_usage[d1][s1] + 1 >= self.max_physical_labs: continue
                         if self.global_lab_usage[d1][s1+1] + 1 >= self.max_physical_labs: continue
@@ -137,12 +180,12 @@ class DepartmentCycleGenerator:
                         if self.grids[sem][d2][s2] is not None or self.grids[sem][d2][s2+1] is not None: continue
                         
                         # Availability check for Session 2: B1(B) and B2(A)
-                        if not self.is_resource_free(t_a, True, d2, s2, sem, "B2") or \
-                           not self.is_resource_free(t_a, True, d2, s2+1, sem, "B2"): continue
+                        if not self.is_resource_free(t_a, 'lab', d2, s2, sem, "B2") or \
+                           not self.is_resource_free(t_a, 'lab', d2, s2+1, sem, "B2"): continue
                         
                         if lab_b:
-                            if not self.is_resource_free(t_b, True, d2, s2, sem, "B1") or \
-                               not self.is_resource_free(t_b, True, d2, s2+1, sem, "B1"): continue
+                            if not self.is_resource_free(t_b, 'lab', d2, s2, sem, "B1") or \
+                               not self.is_resource_free(t_b, 'lab', d2, s2+1, sem, "B1"): continue
                             if self.global_lab_usage[d2][s2] + 1 >= self.max_physical_labs: continue
                             if self.global_lab_usage[d2][s2+1] + 1 >= self.max_physical_labs: continue
                         
@@ -152,9 +195,9 @@ class DepartmentCycleGenerator:
                                                  "parallel": lab_b['name'] if lab_b else None, "b2_teachers": ", ".join(t_b) if lab_b else None}
                         self.grids[sem][d1][s1+1] = {"type": "lab", "name": lab_a['name'], "batch": "B1", "teachers": ", ".join(t_a), "part": 2, 
                                                    "parallel": lab_b['name'] if lab_b else None, "b2_teachers": ", ".join(t_b) if lab_b else None}
-                        self.mark_busy(t_a, True, d1, s1, sem, "B1"); self.mark_busy(t_a, True, d1, s1+1, sem, "B1")
+                        self.mark_busy(t_a, 'lab', d1, s1, sem, "B1"); self.mark_busy(t_a, 'lab', d1, s1+1, sem, "B1")
                         if lab_b:
-                            self.mark_busy(t_b, True, d1, s1, sem, "B2"); self.mark_busy(t_b, True, d1, s1+1, sem, "B2")
+                            self.mark_busy(t_b, 'lab', d1, s1, sem, "B2"); self.mark_busy(t_b, 'lab', d1, s1+1, sem, "B2")
 
                         # Day 2
                         self.grids[sem][d2][s2] = {"type": "lab", "name": (lab_b['name'] if lab_b else lab_a['name']), "batch": "B1" if lab_b else "B2", 
@@ -163,10 +206,10 @@ class DepartmentCycleGenerator:
                         self.grids[sem][d2][s2+1] = {"type": "lab", "name": (lab_b['name'] if lab_b else lab_a['name']), "batch": "B1" if lab_b else "B2", 
                                                    "teachers": ", ".join(t_b if lab_b else t_a), "part": 2, 
                                                    "parallel": lab_a['name'] if lab_b else None, "b2_teachers": ", ".join(t_a) if lab_b else None}
-                        self.mark_busy(t_b if lab_b else t_a, True, d2, s2, sem, "B1" if lab_b else "B2")
-                        self.mark_busy(t_b if lab_b else t_a, True, d2, s2+1, sem, "B1" if lab_b else "B2")
+                        self.mark_busy(t_b if lab_b else t_a, 'lab', d2, s2, sem, "B1" if lab_b else "B2")
+                        self.mark_busy(t_b if lab_b else t_a, 'lab', d2, s2+1, sem, "B1" if lab_b else "B2")
                         if lab_b:
-                            self.mark_busy(t_a, True, d2, s2, sem, "B2"); self.mark_busy(t_a, True, d2, s2+1, sem, "B2")
+                            self.mark_busy(t_a, 'lab', d2, s2, sem, "B2"); self.mark_busy(t_a, 'lab', d2, s2+1, sem, "B2")
                         
                         placed = True; break
                     if placed: break
@@ -196,9 +239,9 @@ class DepartmentCycleGenerator:
                             # CONSTRAINT: One class of ONE subject in ONE day
                             if sub['name'] in sem_day_subjects[sem][d]: continue
                             
-                            if self.grids[sem][d][s] is None and self.is_resource_free([teacher], False, d, s):
+                            if self.grids[sem][d][s] is None and self.is_resource_free([teacher], 'subject', d, s):
                                 self.grids[sem][d][s] = {"type": "subject", "name": sub['name'], "teacher": teacher}
-                                self.mark_busy([teacher], False, d, s)
+                                self.mark_busy([teacher], 'subject', d, s)
                                 sem_day_subjects[sem][d].add(sub['name'])
                                 placed = True; break
                         if placed: break

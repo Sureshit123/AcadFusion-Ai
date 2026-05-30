@@ -89,7 +89,7 @@ def background_scraper(job_id, usn_list, user_id, is_mock=None):
     JOBS[job_id]['status'] = 'Processing Excel'
     try:
         excel_data = generate_excel_report(JOBS[job_id]['results'])
-        JOBS[job_id]['excel_file'] = excel_data
+        JOBS[job_id]['excel_file'] = excel_data.getvalue()  # Store as bytes, not BytesIO
         JOBS[job_id]['status'] = 'Completed'
         
         # Save to MongoDB for persistence
@@ -186,8 +186,12 @@ def submit_captcha(job_id):
 def download(job_id):
     job = JOBS.get(job_id)
     if not job or not job.get('excel_file'): return "File not found", 404
+    # Wrap bytes in a fresh BytesIO object to prevent "closed file" errors
+    import io
+    file_obj = io.BytesIO(job['excel_file'])
+    file_obj.seek(0)
     return send_file(
-        job['excel_file'],
+        file_obj,
         as_attachment=True,
         download_name=f'VTU_Results_{job_id[:8]}.xlsx',
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -206,8 +210,12 @@ def download_history(job_id):
     # Check JOBS cache first
     job = JOBS.get(job_id)
     if job and job.get('excel_file'):
+        # Wrap bytes in a fresh BytesIO object to prevent "closed file" errors
+        import io
+        file_obj = io.BytesIO(job['excel_file'])
+        file_obj.seek(0)
         return send_file(
-            job['excel_file'],
+            file_obj,
             as_attachment=True,
             download_name=f'VTU_Results_{job_id[:8]}.xlsx',
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'

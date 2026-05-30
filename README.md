@@ -95,4 +95,3 @@ Designed to be easily deployed on **Render**, **Railway**, or **Vercel**.
 This project is licensed under the MIT License - see the LICENSE file for details.
 
 Developed with ❤️ for Academic Excellence.
-I

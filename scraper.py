@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Base URLs
-VTU_BASE = "https://results.vtu.ac.in/D25J26Ecbcs"
+VTU_BASE = "https://results.vtu.ac.in/MJ26cbcs"
 VTU_INDEX = f"{VTU_BASE}/index.php"
 VTU_RESULT = f"{VTU_BASE}/resultpage.php"
 
@@ -176,14 +176,29 @@ def parse_vtu_html(usn, html_content):
     }
     
     try:
-        # Extract Name
+        # Extract Name - Support both <td> and <div class="divTableCell"> layouts
+        name_found = False
+        
+        # Try td-based layout (old VTU format)
         tds = soup.find_all('td')
         for i, td in enumerate(tds):
             text = td.get_text(strip=True).upper()
             if "STUDENT NAME" in text and i + 1 < len(tds):
                 raw_name = tds[i+1].get_text(strip=True).title()
                 result["name"] = raw_name.lstrip(': ').strip()
+                name_found = True
                 break
+        
+        # Try div-based layout (new VTU format)
+        if not name_found:
+            divs = soup.find_all('div', class_='divTableCell')
+            for i, div in enumerate(divs):
+                text = div.get_text(strip=True).upper()
+                if "STUDENT NAME" in text and i + 1 < len(divs):
+                    raw_name = divs[i+1].get_text(strip=True)
+                    result["name"] = raw_name.lstrip(': ').strip()
+                    name_found = True
+                    break
 
         # Extract Subjects dynamically
         rows = soup.find_all('tr') + soup.find_all('div', class_='divTableRow')
